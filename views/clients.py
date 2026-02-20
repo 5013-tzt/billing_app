@@ -15,7 +15,7 @@ class ClientDialog(QDialog):
         self.setWindowTitle("👥 Client Database Management")
         self.resize(1000, 800)
         self.setMinimumSize(900, 700)
-        self.setStyleSheet(STYLESHEET)  # မူလအရောင်အတိုင်း
+        self.setStyleSheet(STYLESHEET)
         self.current_id = None
         
         # Main Layout
@@ -23,7 +23,7 @@ class ClientDialog(QDialog):
         main_layout.setContentsMargins(15, 15, 15, 15)
         main_layout.setSpacing(10)
 
-        # === Table Section ===
+        # === Table Section (မူလအတိုင်း) ===
         table_frame = QFrame()
         table_frame.setFrameShape(QFrame.StyledPanel)
         table_frame.setStyleSheet("QFrame { background-color: transparent; border-radius: 8px; padding: 8px; }")
@@ -89,7 +89,7 @@ class ClientDialog(QDialog):
         form_layout.setSpacing(10)
         form_layout.setContentsMargins(0, 5, 0, 5)
 
-        # 1. Basic Info - Single row
+        # 1. Basic Info - Single row (မူလအတိုင်း)
         basic_frame = QFrame()
         basic_frame.setFrameShape(QFrame.StyledPanel)
         basic_frame.setStyleSheet("QFrame { background-color: transparent; border-radius: 6px; padding: 8px; }")
@@ -114,25 +114,53 @@ class ClientDialog(QDialog):
         basic_row.addStretch()
         form_layout.addWidget(basic_frame)
 
-        # 2. Addresses - 3 in a row
+        # ===== အရေးကြီးဆုံး ပြင်ဆင်ချက်: Addresses - အထက်အောက်ချဲ့လို့ရအောင် =====
         addr_frame = QFrame()
         addr_frame.setFrameShape(QFrame.StyledPanel)
         addr_frame.setStyleSheet("QFrame { background-color: transparent; border-radius: 6px; padding: 8px; }")
-        addr_layout = QHBoxLayout(addr_frame)
+        
+        # ဒေါင်လိုက် Layout သုံးမယ်
+        addr_layout = QVBoxLayout(addr_frame)
         addr_layout.setSpacing(8)
         
-        addr_layout.addWidget(QLabel("📍 Addresses:"))
+        # Header
+        addr_header = QHBoxLayout()
+        addr_header.addWidget(QLabel("📍 Addresses (3 locations)"))
+        addr_header.addStretch()
+        addr_layout.addLayout(addr_header)
         
+        # Address boxes တွေကို QTextEdit နဲ့ပြောင်း
         self.addrs = []
+        addr_labels = ["Address 1:", "Address 2:", "Address 3:"]
+        
         for i in range(3):
-            addr_text = QLineEdit()
-            addr_text.setPlaceholderText(f"Addr {i+1}")
-            addr_layout.addWidget(addr_text)
+            # Address row
+            addr_row = QHBoxLayout()
+            addr_row.addWidget(QLabel(addr_labels[i]), 1)
+            
+            addr_text = QTextEdit()  # QLineEdit ကနေ QTextEdit ပြောင်း
+            addr_text.setPlaceholderText(f"Enter address {i+1} (multiple lines allowed)")
+            addr_text.setMinimumHeight(60)  # အမြင့် 60px ထား
+            addr_text.setMaximumHeight(100)  # အများဆုံး 100px
+            addr_text.setStyleSheet("""
+                QTextEdit {
+                    border: 1px solid #333;
+                    border-radius: 4px;
+                    padding: 4px;
+                    background-color: #2a2a2a;
+                    color: white;
+                }
+            """)
+            addr_row.addWidget(addr_text, 5)  # stretch factor 5
+            
+            addr_row.addStretch(1)
+            addr_layout.addLayout(addr_row)
+            
             self.addrs.append(addr_text)
         
         form_layout.addWidget(addr_frame)
 
-        # 3. Contacts - ယှဉ်ရက်ထားတဲ့ပုံစံ
+        # 3. Contacts - ယှဉ်ရက်ထားတဲ့ပုံစံ (မူလအတိုင်း)
         contact_frame = QFrame()
         contact_frame.setFrameShape(QFrame.StyledPanel)
         contact_frame.setStyleSheet("QFrame { background-color: transparent; border-radius: 6px; padding: 8px; }")
@@ -195,7 +223,7 @@ class ClientDialog(QDialog):
         form_scroll.setWidget(form_widget)
         main_layout.addWidget(form_scroll)
 
-        # === Buttons Section ===
+        # === Buttons Section (မူလအတိုင်း) ===
         btn_frame = QFrame()
         btn_frame.setFrameShape(QFrame.NoFrame)
         btn_layout = QHBoxLayout(btn_frame)
@@ -341,6 +369,7 @@ class ClientDialog(QDialog):
             self.name_in.setText(c['name'] or "")
             self.abbr_in.setText(c['abbr'] or "")
             
+            # Addresses - QTextEdit အတွက် toPlainText() သုံးမယ်
             for i in range(3): 
                 self.addrs[i].setText(c[f'addr{i+1}'] or "")
             
@@ -398,9 +427,9 @@ class ClientDialog(QDialog):
             self.abbr_in.text()
         ]
         
-        # Addresses
+        # Addresses - QTextEdit အတွက် toPlainText() သုံးမယ်
         for addr in self.addrs:
-            vals.append(addr.text())
+            vals.append(addr.toPlainText())  # toPlainText() သုံးရမယ်
             
         # Contacts
         for contact in self.contacts:
