@@ -134,20 +134,57 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             admin_name TEXT,
             admin_user TEXT,
-            password TEXT
+            password TEXT,
+            theme TEXT DEFAULT 'dark'
         )
     ''')
+    
+    # === Theme preference migration ===
+    cursor.execute("PRAGMA table_info(settings)")
+    settings_cols = [col[1] for col in cursor.fetchall()]
+    
+    if 'theme' not in settings_cols:
+        print("Adding theme column to settings table...")
+        try:
+            cursor.execute("ALTER TABLE settings ADD COLUMN theme TEXT DEFAULT 'dark'")
+        except Exception as e:
+            print(f"theme column may already exist: {e}")
     
     settings = conn.execute("SELECT * FROM settings WHERE id=1").fetchone()
     if not settings:
         conn.execute('''
-            INSERT INTO settings (id, admin_name, admin_user, password)
-            VALUES (1, 'Administrator', 'admin', '1234')
+            INSERT INTO settings (id, admin_name, admin_user, password, theme)
+            VALUES (1, 'Administrator', 'admin', '1234', 'dark')
         ''')
     
     conn.commit()
     conn.close()
     print("Database initialized successfully!")
+
+
+def get_theme_preference():
+    """Get user's theme preference from database"""
+    try:
+        conn = get_db()
+        result = conn.execute("SELECT theme FROM settings WHERE id=1").fetchone()
+        conn.close()
+        return result['theme'] if result and result['theme'] else 'dark'
+    except:
+        return 'dark'
+
+
+def set_theme_preference(theme_name):
+    """Save user's theme preference to database"""
+    try:
+        conn = get_db()
+        conn.execute("UPDATE settings SET theme=? WHERE id=1", (theme_name,))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error saving theme preference: {e}")
+        return False
+
 
 if __name__ == '__main__':
     init_db()

@@ -1,3 +1,9 @@
+"""
+main.py - Theme System Integration
+===================================
+Replace your main.py with this version
+"""
+
 import sys
 import os
 os.environ["QT_LOGGING_RULES"] = "qt.qpa.fonts.warning=false"
@@ -11,26 +17,26 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QFont
 
 # Internal Imports
-from database import get_db, init_db
-from views.styles import STYLESHEET
+from database import get_db, init_db, get_theme_preference
+from views.styles import get_theme  # Changed from STYLESHEET
 from views.clients import ClientDialog
 from views.invoice import InvoiceDialog
 from views.settings import SettingsDialog
 from views.dashboard import DashboardView
-from views.invoice_list import InvoiceListDialog  # Invoice List ကိုထည့်
+from views.invoice_list import InvoiceListDialog
 
 class Login(QDialog):
-    def __init__(self):
+    def __init__(self, stylesheet):
         super().__init__()
         self.setFixedSize(350, 450)
-        self.setStyleSheet(STYLESHEET)
+        self.setStyleSheet(stylesheet)  # Use passed stylesheet
         conn = get_db()
         self.s = conn.execute("SELECT * FROM settings WHERE id=1").fetchone()
         conn.close()
         
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
-        t = QLabel(self.s['company_name'] if self.s else "LOGIN")
+        t = QLabel(self.s['admin_name'] if self.s and self.s['admin_name'] else "LOGIN")
         t.setStyleSheet("font-size: 18px; color: #BB86FC;")
         layout.addWidget(t)
         
@@ -48,82 +54,121 @@ class Login(QDialog):
         layout.addWidget(b)
 
     def handle(self):
-        if self.s and self.u.text() == self.s['admin_user'] and self.p.text() == self.s['password']:
+        conn = get_db()
+        row = conn.execute(
+            "SELECT * FROM settings WHERE admin_user=? AND password=?", 
+            (self.u.text(), self.p.text())
+        ).fetchone()
+        conn.close()
+        if row:
             self.accept()
         else:
-            QMessageBox.warning(self, "No", "Wrong Access")
+            QMessageBox.warning(self, "Error", "Invalid credentials")
 
 class MainWindow(QMainWindow):
-    def __init__(self, settings):
+    def __init__(self, stylesheet):
         super().__init__()
-        self.settings = settings
-        self.setWindowTitle(f"{settings['company_name']} Suite")
-        self.resize(1200, 800)
-        self.setStyleSheet(STYLESHEET)
+        self.setWindowTitle("Billing System")
+        self.setGeometry(100, 100, 1200, 700)
+        self.setStyleSheet(stylesheet)  # Use passed stylesheet
         
-        cw = QWidget()
-        self.setCentralWidget(cw)
-        l = QHBoxLayout(cw)
-        l.setContentsMargins(0,0,0,0)
+        central = QWidget()
+        self.setCentralWidget(central)
+        main_layout = QHBoxLayout(central)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         
         # Sidebar
-        sb = QFrame()
-        sb.setObjectName("Sidebar")
-        sb.setFixedWidth(220)
-        sl = QVBoxLayout(sb)
+        sidebar = QFrame()
+        sidebar.setObjectName("Sidebar")
+        sidebar.setFixedWidth(200)
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(0, 20, 0, 20)
+        sidebar_layout.setSpacing(5)
         
-        if settings['logo'] and os.path.exists(settings['logo']):
-            logo = QLabel()
-            logo.setPixmap(QPixmap(settings['logo']).scaled(80,80, Qt.KeepAspectRatio))
-            logo.setAlignment(Qt.AlignCenter)
-            sl.addWidget(logo)
-            
-        self.b1 = QPushButton("  🏠  Dashboard")
-        self.b2 = QPushButton("  📑  New Invoice")
-        self.b3 = QPushButton("  👥  Clients")
-        self.b4 = QPushButton("  📋  Invoice List")  # Invoice List ကိုထည့်
-        self.b5 = QPushButton("  ⚙️  Settings")      # Settings ကိုအောက်ဆုံးမှာထား
+        title_label = QLabel("📊 Billing System")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold; padding: 15px; color: #BB86FC;")
+        title_label.setAlignment(Qt.AlignCenter)
+        sidebar_layout.addWidget(title_label)
         
-        buttons = [self.b1, self.b2, self.b3, self.b4, self.b5]
-        for b in buttons:
-            b.setObjectName("NavBtn")
-            b.setFixedHeight(45)
-            sl.addWidget(b)
-            
-        sl.addStretch()
-        l.addWidget(sb)
+        # Navigation Buttons
+        nav_data = [
+            ("🏠 Dashboard", self.show_dashboard),
+            ("👥 Clients", self.open_clients),
+            ("📄 Create Invoice", self.open_invoice),
+            ("📋 Invoice List", self.open_invoice_list),
+            ("⚙️ Settings", self.open_settings),
+        ]
         
-        # Stacked Widget
-        self.stk = QStackedWidget()
-        self.dashboard = DashboardView(settings['company_name'])
-        self.stk.addWidget(self.dashboard)
-        l.addWidget(self.stk)
+        for text, func in nav_data:
+            btn = QPushButton(text)
+            btn.setObjectName("NavBtn")
+            btn.setFixedHeight(45)
+            btn.clicked.connect(func)
+            sidebar_layout.addWidget(btn)
         
-        # Connections
-        self.b1.clicked.connect(lambda: self.stk.setCurrentIndex(0))
-        self.b2.clicked.connect(lambda: InvoiceDialog(self).exec())
-        self.b3.clicked.connect(lambda: ClientDialog(self).exec())
-        self.b4.clicked.connect(self.show_invoice_list)  # Invoice List
-        self.b5.clicked.connect(self.open_settings)      # Settings
-
-    def show_invoice_list(self):
-        """Invoice List dialog ကိုဖွင့်မယ်"""
-        dialog = InvoiceListDialog(self)
-        dialog.exec()
-
+        sidebar_layout.addStretch()
+        
+        # Logout button
+        logout_btn = QPushButton("🚪 Logout")
+        logout_btn.setObjectName("NavBtn")
+        logout_btn.setFixedHeight(45)
+        logout_btn.clicked.connect(self.logout)
+        sidebar_layout.addWidget(logout_btn)
+        
+        # Content Area
+        self.stacked = QStackedWidget()
+        self.dashboard = DashboardView()
+        self.stacked.addWidget(self.dashboard)
+        
+        main_layout.addWidget(sidebar)
+        main_layout.addWidget(self.stacked)
+    
+    def show_dashboard(self):
+        self.stacked.setCurrentWidget(self.dashboard)
+    
+    def open_clients(self):
+        ClientDialog(self).exec()
+    
+    def open_invoice(self):
+        InvoiceDialog(self).exec()
+    
+    def open_invoice_list(self):
+        InvoiceListDialog(self).exec()
+    
     def open_settings(self):
-        if SettingsDialog(self).exec() == QDialog.Accepted:
-            pass
+        SettingsDialog(self).exec()
+    
+    def logout(self):
+        self.close()
 
-if __name__ == "__main__":
+
+def main():
+    # Initialize database first
     init_db()
     
+    # Get user's theme preference
+    theme_name = get_theme_preference()
+    theme = get_theme(theme_name)
+    stylesheet = theme.get_stylesheet()
+    
+    # Create application
     app = QApplication(sys.argv)
     
-    if Login().exec() == QDialog.Accepted:
-        conn = get_db()
-        s = conn.execute("SELECT * FROM settings WHERE id=1").fetchone()
-        conn.close()
-        w = MainWindow(s)
-        w.show()
+    # Apply global font
+    font = QFont("Segoe UI", 10)
+    app.setFont(font)
+    
+    # Show login dialog with theme
+    login = Login(stylesheet)
+    if login.exec() == QDialog.Accepted:
+        # Show main window with theme
+        window = MainWindow(stylesheet)
+        window.show()
         sys.exit(app.exec())
+    else:
+        sys.exit()
+
+
+if __name__ == '__main__':
+    main()
