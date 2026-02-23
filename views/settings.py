@@ -338,23 +338,32 @@ class SettingsDialog(QDialog):
         self.theme_info.setText(info_text)
 
     def apply_theme(self):
-        """Theme ကို apply လုပ်မယ်"""
-        theme_name = self.theme_combo.currentData()
+        """Theme ကို Apply လုပ်ပြီး App တစ်ခုလုံးရှိ Window အားလုံးကို ချက်ချင်းအရောင်ပြောင်းခိုင်းမယ်"""
+        from PySide6.QtWidgets import QApplication, QMessageBox
+        from .styles import get_theme
         
-        # Save to database
+        theme_name = self.theme_combo.currentData()  # 'dark' သို့မဟုတ် 'light'
+        
+        # ၁။ ရွေးချယ်လိုက်သော Theme ကို Database ထဲမှာ အရင်သိမ်းမယ်
         if set_theme_preference(theme_name):
+            
+            # ၂။ styles.py ထဲကနေ Theme နဲ့ သက်ဆိုင်တဲ့ Stylesheet (အရောင်သတ်မှတ်ချက်) ကို ယူမယ်
+            new_theme = get_theme(theme_name)
+            new_style = new_theme.get_stylesheet()
+            
+            # ၃။ QApplication ကို သုံးပြီး ပွင့်နေသမျှ Window အားလုံးကို (ဥပမာ- Invoice, Client List) 
+            # တစ်ခါတည်း ချက်ချင်း အရောင်လိုက်ပြောင်းခိုင်းမယ်
+            QApplication.instance().setStyleSheet(new_style)
+            
+            # ၄။ User ကို အောင်မြင်ကြောင်း အသိပေးချက်ပြမယ်
             QMessageBox.information(
-                self,
-                "✅ Theme Changed",
-                f"Theme changed to {self.theme_combo.currentText()}!\n\n"
-                "Please restart the application for changes to take effect."
+                self, 
+                "✅ Theme Updated", 
+                f"App style has been changed to {self.theme_combo.currentText()} mode successfully!"
             )
         else:
-            QMessageBox.warning(
-                self,
-                "Error",
-                "Failed to save theme preference!"
-            )
+            # Database သိမ်းရတာ အဆင်မပြေရင် Error ပြမယ်
+            QMessageBox.warning(self, "Error", "Failed to save theme preference!")
 
     def browse_logo(self):
         file_path, _ = QFileDialog.getOpenFileName(
