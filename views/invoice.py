@@ -1,56 +1,42 @@
+# invoice.py - အဆင့်မြှင့်တင်ထားသော ဗားရှင်း (Complete Version)
+# ပိုကြီးတဲ့ စာလုံးများ၊ ခလုပ်များ၊ window အပြည့်နဲ့
+
 import calendar
 from datetime import datetime
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGroupBox, QGridLayout, QLineEdit,
     QLabel, QComboBox, QTableWidget, QTableWidgetItem, QHeaderView,
     QPushButton, QCheckBox, QMessageBox, QScrollArea, QWidget, QDateEdit,
-    QFrame, QSplitter, QFormLayout, QFileDialog
+    QFrame, QSplitter, QFormLayout, QFileDialog, QApplication
 )
-from PySide6.QtCore import Qt, QDate
-from PySide6.QtGui import QPixmap, QColor
-from database import get_db
-from .styles import STYLESHEET
+from PySide6.QtCore import Qt, QDate, QTimer
+from PySide6.QtGui import QPixmap, QFont, QPalette, QColor
+from database import get_db, get_theme_preference
+from .styles import get_theme
 from .pdf_generator import InvoicePDFGenerator
 import os
+
 
 class InvoiceDialog(QDialog):
     def __init__(self, parent=None, invoice_id=None, mode='new'):
         super().__init__(parent)
         
+        # === အရေးကြီးဆုံး ပြင်ဆင်ချက် ===
+        # database ကနေ လက်ရှိ theme ကိုယူပြီး stylesheet ချိန်းမယ်
+        current_theme = get_theme_preference()
+        theme_obj = get_theme(current_theme)
+        self.setStyleSheet(theme_obj.get_stylesheet())
+        
+        # Edit mode ဆိုရင် window title ပြောင်းမယ်
         if mode == 'edit' and invoice_id:
             self.setWindowTitle(f"✏️ Edit Invoice (ID: {invoice_id})")
         else:
             self.setWindowTitle("🏢 Professional Invoice Generator")
-            
-        self.resize(1400, 900)
-        self.setMinimumSize(1300, 800)
         
-        # UI Table ထဲက widget တွေအတွက် Custom Style
-        self.setStyleSheet(STYLESHEET + """
-            QTableWidget {
-                gridline-color: #333;
-                border: 1px solid #333;
-                background-color: #121212;
-                border-radius: 4px;
-            }
-            QTableWidget QLineEdit, QTableWidget QDateEdit {
-                border: none;
-                background: transparent;
-                padding: 4px;
-                color: #e0e0e0;
-            }
-            QTableWidget QLineEdit:focus {
-                background-color: #2a2a2a;
-                border-radius: 2px;
-            }
-            QHeaderView::section {
-                background-color: #1e1e1e;
-                padding: 8px;
-                border: none;
-                border-bottom: 2px solid #333;
-                font-weight: bold;
-            }
-        """)
+        # === Window အပြည့်ဖြစ်အောင် သတ်မှတ်ခြင်း ===
+        self.setWindowState(Qt.WindowMaximized)  # အပြည့်ဖွင့်မယ်
+        self.resize(1600, 950)  # နောက်ကွယ်ကအရွယ်အစား
+        self.setMinimumSize(1400, 800)  # အနည်းဆုံးအရွယ်အစား
         
         self.invoice_type = "monthly"
         self.clients_data = []
@@ -60,245 +46,641 @@ class InvoiceDialog(QDialog):
         self.current_invoice_id = invoice_id
         self.edit_mode = (mode == 'edit')
         
+        # Font size ချိန်ညှိခြင်း
+        self.set_font_sizes()
+        
         self.init_ui()
         self.load_clients_list()
         self.load_mother_companies()
-        
-        if self.edit_mode and self.current_invoice_id:
-            self.load_invoice_data(self.current_invoice_id)
+        # table အရောင်ပြောင်းတာကို စမ်းသပ်ခြင်း
+        self.table.setStyleSheet("""
+            QTableWidget {
+                background-color: #1e1e1e;
+                color: #e0e0e0;
+                gridline-color: #444;
+                selection-background-color: #535bf4;     /* ရွေးတဲ့နေရာ နောက်ခံ - ပိုမြင်ရအောင် လင်းတဲ့ အရောင် */
+                selection-color: white;                   /* ရွေးတဲ့ စာသား အရောင် - အဖြူ သေချာပါစေ */
+                alternate-background-color: #2a2a2a;
+            }
 
-    def init_ui(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+            QTableWidget::item {
+                color: #e0e0e0;
+            }
+
+            QTableWidget::item:selected,
+            QTableWidget::item:focus,
+            QTableWidget::item:selected:focus {
+                background-color: #535bf4 !important;
+                color: white !important;
+                border: 1px solid #7289da;               /* ဘောင်ကို ပိုမြင်သာအောင် ထည့်နိုင်တယ် */
+            }
+
+            QTableWidget::item:selected:!active {
+                background-color: #3b3f8c;
+                color: white;
+            }
+        """)
         
+        # Edit mode ဆိုရင် invoice data ကို load မယ်
+        if self.edit_mode and self.current_invoice_id:
+            QTimer.singleShot(100, lambda: self.load_invoice_data(self.current_invoice_id))
+    
+    def set_font_sizes(self):
+        """စာလုံးအရွယ်အစားများကို ချိန်ညှိမယ်"""
+        font = QFont()
+        font.setPointSize(11)  # ပုံမှန်စာလုံး အရွယ်
+        self.setFont(font)
+    
+    def init_ui(self):
+        # Main layout with fixed footer
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(15)
+        
+        # Scroll area for content
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: transparent;
+            }
+        """)
         
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setSpacing(15)
-        layout.setContentsMargins(25, 20, 25, 20)
+        layout.setContentsMargins(5, 5, 5, 10)
 
-        # === 1. TOP BAR: Mother Company Info ===
+        # === မိခင် Company Info Bar - ပိုကြီးအောင်လုပ် ===
         company_bar = QFrame()
-        company_bar.setStyleSheet("""
-            QFrame { background-color: #1e1e1e; border: 1px solid #333; border-radius: 12px; padding: 15px; }
-        """)
+        company_bar.setFrameShape(QFrame.StyledPanel)
+        company_bar.setMinimumHeight(120)  # အမြင့်တိုးမယ်
         company_layout = QHBoxLayout(company_bar)
+        company_layout.setSpacing(20)
+        company_layout.setContentsMargins(15, 15, 15, 15)
         
-        self.company_logo = QLabel("No Logo")
-        self.company_logo.setFixedSize(70, 70)
-        self.company_logo.setStyleSheet("border-radius: 35px; background-color: #2a2a2a; color: #666;")
+        # Logo - ပိုကြီးအောင်
+        self.company_logo = QLabel()
+        self.company_logo.setFixedSize(100, 100)  # 80 > 100
         self.company_logo.setAlignment(Qt.AlignCenter)
+        self.company_logo.setText("🏢 LOGO")
+        self.company_logo.setStyleSheet("""
+            QLabel {
+                border: 2px solid palette(mid);
+                border-radius: 8px;
+                padding: 5px;
+                font-size: 14px;
+            }
+        """)
+        self.company_logo.setScaledContents(True)
         company_layout.addWidget(self.company_logo)
         
-        info_vbox = QVBoxLayout()
-        self.company_name_display = QLabel("Mother Company")
-        self.company_name_display.setStyleSheet("font-size: 20px; font-weight: bold; color: #BB86FC;")
-        self.company_details_display = QLabel("Select a company to see details")
-        self.company_details_display.setStyleSheet("color: #999;")
-        info_vbox.addWidget(self.company_name_display)
-        info_vbox.addWidget(self.company_details_display)
-        company_layout.addLayout(info_vbox, 1)
+        # Company Info
+        info_layout = QVBoxLayout()
+        info_layout.setSpacing(8)
         
-        tax_vbox = QVBoxLayout()
-        tax_vbox.setAlignment(Qt.AlignRight)
-        tax_vbox.addWidget(QLabel("TAX ID"), 0, Qt.AlignRight)
+        self.company_name_display = QLabel("Mother Company")
+        company_name_font = QFont()
+        company_name_font.setPointSize(20)  # 18 > 20
+        company_name_font.setBold(True)
+        self.company_name_display.setFont(company_name_font)
+        info_layout.addWidget(self.company_name_display)
+        
+        self.company_details_display = QLabel("Phone | Email | Address")
+        details_font = QFont()
+        details_font.setPointSize(12)  # 14 > 12
+        self.company_details_display.setFont(details_font)
+        info_layout.addWidget(self.company_details_display)
+        
+        company_layout.addLayout(info_layout, 3)
+        
+        # Tax Number
+        tax_layout = QHBoxLayout()
+        tax_label = QLabel("Tax ID:")
+        tax_label_font = QFont()
+        tax_label_font.setPointSize(12)
+        tax_label.setFont(tax_label_font)
+        tax_layout.addWidget(tax_label)
+        
         self.company_tax_display = QLabel("N/A")
-        self.company_tax_display.setStyleSheet("font-weight: bold; color: #f59e0b; font-size: 16px;")
-        tax_vbox.addWidget(self.company_tax_display, 0, Qt.AlignRight)
-        company_layout.addLayout(tax_vbox)
+        tax_value_font = QFont()
+        tax_value_font.setPointSize(14)
+        tax_value_font.setBold(True)
+        self.company_tax_display.setFont(tax_value_font)
+        tax_layout.addWidget(self.company_tax_display)
+        company_layout.addLayout(tax_layout)
         
         layout.addWidget(company_bar)
 
-        # === 2. CONFIGURATION & CLIENT INFO (Grid System) ===
-        config_gb = QGroupBox("📋 General Information")
-        grid = QGridLayout(config_gb)
-        grid.setSpacing(15)
-        grid.setContentsMargins(20, 20, 20, 20)
-
-        # Row 0: Invoice Basic
-        grid.addWidget(QLabel("Invoice Type:"), 0, 0)
+        # === Header Section - ပိုကြီးအောင်လုပ် ===
+        header_gb = QGroupBox("📄 Invoice Configuration & Client Information")
+        header_gb.setMinimumHeight(280)  # 220 > 280
+        
+        header_font = QFont()
+        header_font.setPointSize(13)
+        header_font.setBold(True)
+        header_gb.setFont(header_font)
+        
+        header_layout = QVBoxLayout(header_gb)
+        header_layout.setSpacing(15)
+        header_layout.setContentsMargins(15, 20, 15, 15)
+        
+        # === ပထမတန်း ===
+        row1 = QHBoxLayout()
+        row1.setSpacing(15)
+        
+        # Type
+        type_label = QLabel("Type:")
+        type_label_font = QFont()
+        type_label_font.setPointSize(12)
+        type_label.setFont(type_label_font)
+        row1.addWidget(type_label)
+        
         self.inv_type_cb = QComboBox()
         self.inv_type_cb.addItems(["📅 Monthly", "📊 Daily"])
+        self.inv_type_cb.setMinimumWidth(150)
+        self.inv_type_cb.setMinimumHeight(35)
+        cb_font = QFont()
+        cb_font.setPointSize(12)
+        self.inv_type_cb.setFont(cb_font)
         self.inv_type_cb.currentTextChanged.connect(self.on_invoice_type_changed)
-        grid.addWidget(self.inv_type_cb, 0, 1)
-
-        grid.addWidget(QLabel("Mother Co:"), 0, 2)
+        row1.addWidget(self.inv_type_cb)
+        
+        # Mother Co
+        mother_label = QLabel("Mother Co:")
+        mother_label.setFont(type_label_font)
+        row1.addWidget(mother_label)
+        
         self.mother_company_cb = QComboBox()
+        self.mother_company_cb.setMinimumWidth(250)
+        self.mother_company_cb.setMinimumHeight(35)
+        self.mother_company_cb.setFont(cb_font)
         self.mother_company_cb.currentIndexChanged.connect(self.on_mother_company_selected)
-        grid.addWidget(self.mother_company_cb, 0, 3)
-
-        grid.addWidget(QLabel("Inv No:"), 0, 4)
-        self.inv_no = QLineEdit()
-        self.inv_no.setReadOnly(True)
-        self.inv_no.setPlaceholderText("Auto-generated")
-        grid.addWidget(self.inv_no, 0, 5)
-
-        # Row 1: Service & Date
-        grid.addWidget(QLabel("Service:"), 1, 0)
+        row1.addWidget(self.mother_company_cb)
+        
+        # Service
+        service_label = QLabel("Service:")
+        service_label.setFont(type_label_font)
+        row1.addWidget(service_label)
+        
         self.service_cat_cb = QComboBox()
         self.service_cat_cb.setEditable(True)
-        self.service_cat_cb.addItems(["🛡️ Security", "🧹 Cleaning", "🔧 Maintenance"])
-        grid.addWidget(self.service_cat_cb, 1, 1)
-
-        grid.addWidget(QLabel("Date:"), 1, 2)
+        self.service_cat_cb.addItems(["🛡️ Security", "🧹 Cleaning", "🔧 Maintenance", "Other"])
+        self.service_cat_cb.setMinimumWidth(180)
+        self.service_cat_cb.setMinimumHeight(35)
+        self.service_cat_cb.setFont(cb_font)
+        row1.addWidget(self.service_cat_cb)
+        
+        row1.addStretch()
+        header_layout.addLayout(row1)
+        
+        # === ဒုတိယတန်း ===
+        row2 = QHBoxLayout()
+        row2.setSpacing(15)
+        
+        # Inv No
+        invno_label = QLabel("Inv No:")
+        invno_label.setFont(type_label_font)
+        row2.addWidget(invno_label)
+        
+        self.inv_no = QLineEdit()
+        self.inv_no.setReadOnly(True)
+        self.inv_no.setMinimumWidth(180)
+        self.inv_no.setMinimumHeight(35)
+        lineedit_font = QFont()
+        lineedit_font.setPointSize(12)
+        self.inv_no.setFont(lineedit_font)
+        row2.addWidget(self.inv_no)
+        
+        # Date
+        date_label = QLabel("Date:")
+        date_label.setFont(type_label_font)
+        row2.addWidget(date_label)
+        
         self.invoice_date = QDateEdit()
         self.invoice_date.setCalendarPopup(True)
         self.invoice_date.setDate(QDate.currentDate())
+        self.invoice_date.setMinimumWidth(150)
+        self.invoice_date.setMinimumHeight(35)
+        self.invoice_date.setFont(lineedit_font)
         self.invoice_date.dateChanged.connect(self.calculate_totals)
-        grid.addWidget(self.invoice_date, 1, 3)
-
-        grid.addWidget(QLabel("Status:"), 1, 4)
+        row2.addWidget(self.invoice_date)
+        
+        # Status
+        status_label = QLabel("Status:")
+        status_label.setFont(type_label_font)
+        row2.addWidget(status_label)
+        
         self.received_status = QLabel("📥 Not Received")
-        self.received_status.setStyleSheet("color: #f59e0b; font-weight: bold;")
-        grid.addWidget(self.received_status, 1, 5)
-
-        # Row 2: Title (Full Width)
-        grid.addWidget(QLabel("Invoice Title:"), 2, 0)
+        self.received_status.setMinimumWidth(150)
+        self.received_status.setMinimumHeight(35)
+        status_font = QFont()
+        status_font.setPointSize(12)
+        status_font.setBold(True)
+        self.received_status.setFont(status_font)
+        row2.addWidget(self.received_status)
+        
+        row2.addStretch()
+        header_layout.addLayout(row2)
+        
+        # === တတိယတန်း ===
+        row3 = QHBoxLayout()
+        row3.setSpacing(15)
+        
+        # Title
+        title_label = QLabel("Title:")
+        title_label.setFont(type_label_font)
+        row3.addWidget(title_label)
+        
         self.inv_title = QLineEdit("PROFESSIONAL SERVICE INVOICE")
-        grid.addWidget(self.inv_title, 2, 1, 1, 5)
-
-        layout.addWidget(config_gb)
-
-        # === 3. CLIENT SECTION ===
-        client_gb = QGroupBox("🏢 Client Information")
-        client_grid = QGridLayout(client_gb)
-        client_grid.setSpacing(12)
-
-        client_grid.addWidget(QLabel("Client Co:"), 0, 0)
+        self.inv_title.setMinimumWidth(600)
+        self.inv_title.setMinimumHeight(35)
+        self.inv_title.setFont(lineedit_font)
+        row3.addWidget(self.inv_title)
+        
+        row3.addStretch()
+        header_layout.addLayout(row3)
+        
+        # === စတုတ္ထတန်း ===
+        row4 = QHBoxLayout()
+        row4.setSpacing(15)
+        
+        # Client Co
+        client_label = QLabel("Client Co:")
+        client_label.setFont(type_label_font)
+        row4.addWidget(client_label)
+        
         self.client_cb = QComboBox()
         self.client_cb.setEditable(True)
+        self.client_cb.setPlaceholderText("Select Client Company")
+        self.client_cb.setMinimumWidth(350)
+        self.client_cb.setMinimumHeight(35)
+        self.client_cb.setFont(cb_font)
         self.client_cb.currentIndexChanged.connect(self.on_client_selected)
-        client_grid.addWidget(self.client_cb, 0, 1)
-
-        client_grid.addWidget(QLabel("Address:"), 0, 2)
+        row4.addWidget(self.client_cb)
+        
+        # Address
+        addr_label = QLabel("Address:")
+        addr_label.setFont(type_label_font)
+        row4.addWidget(addr_label)
+        
         self.addr_cb = QComboBox()
         self.addr_cb.setEditable(True)
-        client_grid.addWidget(self.addr_cb, 0, 3)
-
-        # Contact Details Row
-        contact_lay = QHBoxLayout()
-        self.contact_name = QLineEdit(); self.contact_name.setPlaceholderText("Name")
-        self.contact_pos = QLineEdit(); self.contact_pos.setPlaceholderText("Position")
-        self.contact_ph = QLineEdit(); self.contact_ph.setPlaceholderText("Phone")
-        self.contact_em = QLineEdit(); self.contact_em.setPlaceholderText("Email")
+        self.addr_cb.setPlaceholderText("Select Address")
+        self.addr_cb.setMinimumWidth(400)
+        self.addr_cb.setMinimumHeight(35)
+        self.addr_cb.setFont(cb_font)
+        row4.addWidget(self.addr_cb)
         
-        self.show_name = QCheckBox(); self.show_pos = QCheckBox()
-        self.show_ph = QCheckBox(); self.show_em = QCheckBox()
-
-        for w, c in [(self.contact_name, self.show_name), (self.contact_pos, self.show_pos), 
-                     (self.contact_ph, self.show_ph), (self.contact_em, self.show_em)]:
-            contact_lay.addWidget(w)
-            contact_lay.addWidget(c)
+        row4.addStretch()
+        header_layout.addLayout(row4)
         
-        client_grid.addWidget(QLabel("Contact:"), 1, 0)
-        client_grid.addLayout(contact_lay, 1, 1, 1, 3)
+        # === ပဉ္စမတန်း (Contact Info) ===
+        # === ပဉ္စမတန်း (Contact Info) ===
+        row5 = QHBoxLayout()
+        row5.setSpacing(15)
 
-        layout.addWidget(client_gb)
+        contact_label = QLabel("Contact:")
+        contact_label.setFont(type_label_font)
+        row5.addWidget(contact_label)
 
-        # === 4. SERVICE DETAILS (TABLE) ===
+        # Name
+        name_layout = QHBoxLayout()
+        name_layout.setSpacing(5)
+
+        self.contact_name = QLineEdit()
+        self.contact_name.setPlaceholderText("Name")
+        self.contact_name.setMinimumWidth(140)
+        self.contact_name.setMinimumHeight(35)
+        self.contact_name.setFont(lineedit_font)
+        name_layout.addWidget(self.contact_name)
+
+        self.show_name = QCheckBox()
+        self.show_name.setMinimumHeight(35)
+        name_layout.addWidget(self.show_name)
+
+        row5.addLayout(name_layout)
+
+        # Position
+        pos_layout = QHBoxLayout()
+        pos_layout.setSpacing(5)
+
+        self.contact_pos = QLineEdit()
+        self.contact_pos.setPlaceholderText("Position")
+        self.contact_pos.setMinimumWidth(120)
+        self.contact_pos.setMinimumHeight(35)
+        self.contact_pos.setFont(lineedit_font)
+        pos_layout.addWidget(self.contact_pos)
+
+        self.show_pos = QCheckBox()
+        self.show_pos.setMinimumHeight(35)
+        pos_layout.addWidget(self.show_pos)
+
+        row5.addLayout(pos_layout)
+
+        # Phone
+        phone_layout = QHBoxLayout()
+        phone_layout.setSpacing(5)
+
+        self.contact_ph = QLineEdit()
+        self.contact_ph.setPlaceholderText("Phone")
+        self.contact_ph.setMinimumWidth(120)
+        self.contact_ph.setMinimumHeight(35)
+        self.contact_ph.setFont(lineedit_font)
+        phone_layout.addWidget(self.contact_ph)
+
+        self.show_ph = QCheckBox()
+        self.show_ph.setMinimumHeight(35)
+        phone_layout.addWidget(self.show_ph)
+
+        row5.addLayout(phone_layout)
+
+        # Email
+        email_layout = QHBoxLayout()
+        email_layout.setSpacing(5)
+
+        self.contact_em = QLineEdit()
+        self.contact_em.setPlaceholderText("Email")
+        self.contact_em.setMinimumWidth(200)
+        self.contact_em.setMinimumHeight(35)
+        self.contact_em.setFont(lineedit_font)
+        email_layout.addWidget(self.contact_em)
+
+        self.show_em = QCheckBox()
+        self.show_em.setMinimumHeight(35)
+        email_layout.addWidget(self.show_em)
+
+        row5.addLayout(email_layout)
+
+        row5.addStretch()
+        header_layout.addLayout(row5)
+        
+        layout.addWidget(header_gb)
+
+        # --- Service Details (Table) ---
         items_gb = QGroupBox("📦 Service Details")
+        items_gb_font = QFont()
+        items_gb_font.setPointSize(13)
+        items_gb_font.setBold(True)
+        items_gb.setFont(items_gb_font)
+        
         items_lay = QVBoxLayout(items_gb)
+        items_lay.setSpacing(10)
         
-        top_table_lay = QHBoxLayout()
+        # Working Days Checkbox
         self.work_day_check = QCheckBox("✅ Enable Working Days Calculation")
+        work_check_font = QFont()
+        work_check_font.setPointSize(12)
+        self.work_day_check.setFont(work_check_font)
+        self.work_day_check.setMinimumHeight(35)
         self.work_day_check.stateChanged.connect(self.on_working_days_toggled)
-        top_table_lay.addWidget(self.work_day_check)
-        top_table_lay.addStretch()
-        items_lay.addLayout(top_table_lay)
+        items_lay.addWidget(self.work_day_check)
         
+        # Table - ပိုကြီးအောင်
         self.table = QTableWidget(0, 5)
-        self.table.setMinimumHeight(280)
-        self.table.verticalHeader().setDefaultSectionSize(45) # Row အမြင့်ကို ပုံသေညှိ
+        self.table.setMinimumHeight(350)  # 250 > 350
+        self.table.setMaximumHeight(400)
         self.table.verticalHeader().setVisible(False)
-        self.table.setShowGrid(True)
         self.table.itemChanged.connect(self.on_cell_changed)
+        
+        # Table font
+        table_font = QFont()
+        table_font.setPointSize(11)
+        self.table.setFont(table_font)
+        
+        # Row height
+        self.table.verticalHeader().setDefaultSectionSize(35)
         
         self.update_table_headers()
         items_lay.addWidget(self.table)
         
-        self.add_btn = QPushButton("➕ Add New Line")
+        # Add Line Button
+        btn_lay = QHBoxLayout()
+        btn_lay.setSpacing(10)
+        self.add_btn = QPushButton("➕ Add Line")
         self.add_btn.setFixedWidth(150)
-        self.add_btn.setStyleSheet("background-color: #333; height: 35px;")
+        self.add_btn.setFixedHeight(45)
+        add_btn_font = QFont()
+        add_btn_font.setPointSize(12)
+        add_btn_font.setBold(True)
+        self.add_btn.setFont(add_btn_font)
         self.add_btn.clicked.connect(self.add_item_row)
-        items_lay.addWidget(self.add_btn)
-        
+        btn_lay.addWidget(self.add_btn)
+        btn_lay.addStretch()
+        items_lay.addLayout(btn_lay)
         layout.addWidget(items_gb)
 
-        # === 5. FINANCIAL SUMMARY ===
-        summary_gb = QGroupBox("💰 Summary")
-        summary_lay = QHBoxLayout(summary_gb)
+        # --- Financial Summary - ပိုကြီးအောင် ---
+        summary_gb = QGroupBox("💰 Financial Summary")
+        summary_gb.setFont(items_gb_font)
+        summary_gb.setMinimumHeight(150)
         
-        # Financial Cards
-        def create_card(label, color):
-            frame = QFrame()
-            frame.setStyleSheet(f"background-color: #1a1a1a; border-radius: 8px; border-left: 4px solid {color};")
-            lay = QVBoxLayout(frame)
-            title = QLabel(label); title.setStyleSheet("font-size: 11px; color: #888;")
-            val = QLabel("0 MMK"); val.setStyleSheet(f"font-size: 17px; font-weight: bold; color: {color};")
-            lay.addWidget(title); lay.addWidget(val)
-            return frame, val
-
-        sub_f, self.subtotal_lbl = create_card("SUBTOTAL", "#BB86FC")
-        tax_f, self.tax_lbl = create_card("COMMERCIAL TAX (5%)", "#f59e0b")
-        total_f, self.grand_total_lbl = create_card("GRAND TOTAL", "#10b981")
-
-        summary_lay.addWidget(sub_f, 1)
-        summary_lay.addWidget(tax_f, 1)
+        summary_layout = QHBoxLayout(summary_gb)
+        summary_layout.setSpacing(20)
+        summary_layout.setContentsMargins(20, 20, 20, 20)
         
-        # Middle (Tax Toggle & Advance)
-        mid_vbox = QVBoxLayout()
-        self.tax_check = QCheckBox("Apply Tax")
+        # Left section - Subtotal & Tax
+        left_frame = QFrame()
+        left_frame.setFrameShape(QFrame.StyledPanel)
+        left_layout = QHBoxLayout(left_frame)
+        left_layout.setSpacing(20)
+        left_layout.setContentsMargins(10, 10, 10, 10)
+        
+        # Subtotal
+        subtotal_frame = QFrame()
+        subtotal_frame.setFrameShape(QFrame.StyledPanel)
+        subtotal_layout = QVBoxLayout(subtotal_frame)
+        subtotal_layout.setSpacing(5)
+        
+        subtotal_title = QLabel("SUBTOTAL")
+        subtotal_title_font = QFont()
+        subtotal_title_font.setPointSize(14)
+        subtotal_title_font.setBold(True)
+        subtotal_title.setFont(subtotal_title_font)
+        subtotal_layout.addWidget(subtotal_title, 0, Qt.AlignCenter)
+        
+        self.subtotal_lbl = QLabel("0 MMK")
+        subtotal_value_font = QFont()
+        subtotal_value_font.setPointSize(18)
+        subtotal_value_font.setBold(True)
+        self.subtotal_lbl.setFont(subtotal_value_font)
+        subtotal_layout.addWidget(self.subtotal_lbl, 0, Qt.AlignCenter)
+        left_layout.addWidget(subtotal_frame)
+        
+        # Tax
+        tax_frame = QFrame()
+        tax_frame.setFrameShape(QFrame.StyledPanel)
+        tax_layout = QVBoxLayout(tax_frame)
+        tax_layout.setSpacing(5)
+        
+        tax_title = QLabel("TAX (5%)")
+        tax_title.setFont(subtotal_title_font)
+        tax_layout.addWidget(tax_title, 0, Qt.AlignCenter)
+        
+        self.tax_lbl = QLabel("0 MMK")
+        self.tax_lbl.setFont(subtotal_value_font)
+        tax_layout.addWidget(self.tax_lbl, 0, Qt.AlignCenter)
+        left_layout.addWidget(tax_frame)
+        
+        summary_layout.addWidget(left_frame)
+        
+        # Middle section - Tax Check & Advance
+        middle_frame = QFrame()
+        middle_frame.setFrameShape(QFrame.StyledPanel)
+        middle_layout = QVBoxLayout(middle_frame)
+        middle_layout.setSpacing(10)
+        middle_layout.setContentsMargins(15, 15, 15, 15)
+        
+        # Tax Check
+        self.tax_check = QCheckBox("💳 Apply Commercial Tax")
+        tax_check_font = QFont()
+        tax_check_font.setPointSize(13)
+        tax_check_font.setBold(True)
+        self.tax_check.setFont(tax_check_font)
+        self.tax_check.setMinimumHeight(40)
         self.tax_check.stateChanged.connect(self.calculate_totals)
+        middle_layout.addWidget(self.tax_check)
         
-        adv_hbox = QHBoxLayout()
-        self.advance_text = QLineEdit(); self.advance_text.setPlaceholderText("Advance Description")
-        self.advance_amt = QLineEdit("0"); self.advance_amt.setFixedWidth(100)
+        # Advance
+        advance_frame = QFrame()
+        advance_frame.setFrameShape(QFrame.StyledPanel)
+        advance_inner = QHBoxLayout(advance_frame)
+        advance_inner.setSpacing(10)
+        
+        advance_label = QLabel("Advance:")
+        advance_label.setFont(subtotal_title_font)
+        advance_inner.addWidget(advance_label)
+        
+        self.advance_text = QLineEdit()
+        self.advance_text.setPlaceholderText("Description")
+        self.advance_text.setMinimumWidth(200)
+        self.advance_text.setMinimumHeight(40)
+        self.advance_text.setFont(table_font)
+        advance_inner.addWidget(self.advance_text)
+        
+        self.advance_amt = QLineEdit("0")
+        self.advance_amt.setFixedWidth(120)
+        self.advance_amt.setMinimumHeight(40)
+        self.advance_amt.setFont(subtotal_value_font)
+        self.advance_amt.setAlignment(Qt.AlignRight)
         self.advance_amt.textChanged.connect(self.calculate_totals)
-        adv_hbox.addWidget(self.advance_text); adv_hbox.addWidget(self.advance_amt)
+        advance_inner.addWidget(self.advance_amt)
         
-        mid_vbox.addWidget(self.tax_check)
-        mid_vbox.addLayout(adv_hbox)
-        summary_lay.addLayout(mid_vbox, 1)
+        middle_layout.addWidget(advance_frame)
+        summary_layout.addWidget(middle_frame, 2)
         
-        summary_lay.addWidget(total_f, 1)
+        # Right section - Grand Total
+        right_frame = QFrame()
+        right_frame.setFrameShape(QFrame.StyledPanel)
+        right_layout = QVBoxLayout(right_frame)
+        right_layout.setSpacing(5)
+        right_layout.setContentsMargins(20, 15, 20, 15)
+        
+        grand_title = QLabel("GRAND TOTAL")
+        grand_title.setFont(subtotal_title_font)
+        right_layout.addWidget(grand_title, 0, Qt.AlignRight)
+        
+        self.grand_total_lbl = QLabel("0 MMK")
+        grand_total_font = QFont()
+        grand_total_font.setPointSize(26)
+        grand_total_font.setBold(True)
+        self.grand_total_lbl.setFont(grand_total_font)
+        right_layout.addWidget(self.grand_total_lbl, 0, Qt.AlignRight)
+        
+        summary_layout.addWidget(right_frame)
+        
         layout.addWidget(summary_gb)
+        
+        # Small stretch
+        layout.addStretch(1)
 
-        # Final stretch and Scroll setup
-        layout.addStretch()
+        # Add container to scroll
         scroll.setWidget(container)
         main_layout.addWidget(scroll)
 
-        # === FOOTER BUTTONS ===
-        footer = QFrame()
-        footer.setFixedHeight(80)
-        footer.setStyleSheet("background-color: #1a1a1a; border-top: 1px solid #333;")
-        footer_lay = QHBoxLayout(footer)
-        footer_lay.setContentsMargins(30, 0, 30, 0)
+        # --- Footer - ပိုကြီးအောင်၊ ခလုပ်တွေပေါ်လွင်အောင် ---
+        footer_frame = QFrame()
+        footer_frame.setFixedHeight(100)  # 75 > 100
+        footer_frame.setFrameShape(QFrame.StyledPanel)
+        
+        footer_layout = QHBoxLayout(footer_frame)
+        footer_layout.setContentsMargins(25, 15, 25, 15)
+        footer_layout.setSpacing(20)
 
+        # Left buttons
+        left_btn_frame = QFrame()
+        left_btn_layout = QHBoxLayout(left_btn_frame)
+        left_btn_layout.setSpacing(15)
+        
         self.list_btn = QPushButton("📋 Invoice List")
-        self.print_btn = QPushButton("🖨️ Print")
-        self.export_btn = QPushButton("📊 Export")
-        self.save_btn = QPushButton("💾 Save Invoice")
-        
-        self.save_btn.setStyleSheet("background-color: #10b981; font-weight: bold; width: 150px; height: 45px;")
-        
-        for btn in [self.list_btn, self.print_btn, self.export_btn]:
-            btn.setFixedHeight(40)
-            btn.setFixedWidth(110)
-            footer_lay.addWidget(btn)
-        
-        footer_lay.addStretch()
-        footer_lay.addWidget(self.save_btn)
-        main_layout.addWidget(footer)
-
-        # Connections
+        self.list_btn.setFixedHeight(50)
+        self.list_btn.setFixedWidth(160)
+        btn_font = QFont()
+        btn_font.setPointSize(13)
+        btn_font.setBold(True)
+        self.list_btn.setFont(btn_font)
         self.list_btn.clicked.connect(self.show_invoice_list)
-        self.save_btn.clicked.connect(self.save_invoice)
+        left_btn_layout.addWidget(self.list_btn)
+
+        self.print_btn = QPushButton("🖨️ Print")
+        self.print_btn.setFixedHeight(50)
+        self.print_btn.setFixedWidth(120)
+        self.print_btn.setFont(btn_font)
+        self.print_btn.clicked.connect(self.print_invoice)
+        left_btn_layout.addWidget(self.print_btn)
+
+        self.export_btn = QPushButton("📊 Export")
+        self.export_btn.setFixedHeight(50)
+        self.export_btn.setFixedWidth(120)
+        self.export_btn.setFont(btn_font)
+        self.export_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f59e0b;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #d97706;
+            }
+        """)
+        left_btn_layout.addWidget(self.export_btn)
         
+        footer_layout.addWidget(left_btn_frame)
+
+        footer_layout.addStretch()
+
+        # Right buttons
+        right_btn_frame = QFrame()
+        right_btn_layout = QHBoxLayout(right_btn_frame)
+        right_btn_layout.setSpacing(15)
+
+        self.save_btn = QPushButton("💾 Save Invoice")
+        self.save_btn.setFixedHeight(55)  # 45 > 55
+        self.save_btn.setFixedWidth(200)  # 160 > 200
+        self.save_btn.setFont(btn_font)
+        self.save_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #10b981;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #059669;
+            }
+        """)
+        self.save_btn.clicked.connect(self.save_invoice)
+        right_btn_layout.addWidget(self.save_btn)
+
+        footer_layout.addWidget(right_btn_frame)
+
+        main_layout.addWidget(footer_frame)
+
         self.add_item_row()
 
     def load_mother_companies(self):
@@ -357,7 +739,7 @@ class InvoiceDialog(QDialog):
             if logo_path and os.path.exists(logo_path):
                 pixmap = QPixmap(logo_path)
                 if not pixmap.isNull():
-                    scaled_pixmap = pixmap.scaled(80, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    scaled_pixmap = pixmap.scaled(100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     self.company_logo.setPixmap(scaled_pixmap)
                     self.company_logo.setText("")
                 else:
@@ -430,6 +812,7 @@ class InvoiceDialog(QDialog):
         self.show_em.setChecked(state)
 
     def get_col_index(self, name):
+        """Column name အတွက် index ကိုရှာမယ်"""
         for i in range(self.table.columnCount()):
             header_item = self.table.horizontalHeaderItem(i)
             if header_item and header_item.text() == name:
@@ -440,41 +823,26 @@ class InvoiceDialog(QDialog):
         """Table header တွေကို update လုပ်မယ်"""
         is_daily = self.inv_type_cb.currentText() == "📊 Daily"
         use_work_days = self.work_day_check.isChecked()
-        
+    
         headers = ["Description"]
-        
+    
         if is_daily:
-            headers.extend(["Start Date", "End Date", "Days"])
+            headers.extend(["Start Date", "End Date", "Days"])  # ဒီ လိုင်း ကို မတွေ့ရင် ထည့်ပါ။ ရှိရင် ဒီအတိုင်း ပြင်ပါ။
         elif use_work_days:
             headers.append("Days")
-        
+    
         headers.extend(["Qty", "Unit Price", "Amount", "Del"])
-        
+    
         self.table.setColumnCount(len(headers))
         self.table.setHorizontalHeaderLabels(headers)
-        
+    
         header = self.table.horizontalHeader()
-        
-        # Description column - အကျယ်ဆုံး
         header.setSectionResizeMode(0, QHeaderView.Stretch)
-        
-        # Column widths သတ်မှတ်မယ်
+    
         for i in range(1, len(headers)):
             if headers[i] == "Del":
                 header.setSectionResizeMode(i, QHeaderView.Fixed)
-                self.table.setColumnWidth(i, 50)  # Delete button column
-            elif headers[i] in ["Qty", "Days"]:
-                header.setSectionResizeMode(i, QHeaderView.Fixed)
-                self.table.setColumnWidth(i, 80)  # နံပါတ်ထည့်တဲ့ column
-            elif headers[i] == "Unit Price":
-                header.setSectionResizeMode(i, QHeaderView.Fixed)
-                self.table.setColumnWidth(i, 120)  # ဈေးနှုန်းထည့်တဲ့ column
-            elif headers[i] == "Amount":
-                header.setSectionResizeMode(i, QHeaderView.Fixed)
-                self.table.setColumnWidth(i, 130)  # စုစုပေါင်းပြတဲ့ column
-            elif headers[i] in ["Start Date", "End Date"]:
-                header.setSectionResizeMode(i, QHeaderView.Fixed)
-                self.table.setColumnWidth(i, 110)  # ရက်စွဲ columns
+                self.table.setColumnWidth(i, 45)
             else:
                 header.setSectionResizeMode(i, QHeaderView.Interactive)
                 self.table.setColumnWidth(i, 100)
@@ -483,7 +851,7 @@ class InvoiceDialog(QDialog):
         """Row ထဲက widget တွေကို refresh လုပ်မယ်"""
         for i in range(self.table.columnCount()):
             self.table.removeCellWidget(row, i)
-        
+    
         # Delete Button
         del_idx = self.get_col_index("Del")
         if del_idx != -1:
@@ -491,57 +859,19 @@ class InvoiceDialog(QDialog):
             del_btn.setStyleSheet("color: #ef4444; border: none; font-size: 16px; background: transparent;")
             del_btn.clicked.connect(self.delete_specific_row)
             self.table.setCellWidget(row, del_idx, del_btn)
-        
+    
         # Start/End Dates if Daily
         is_daily = self.inv_type_cb.currentText() == "📊 Daily"
         if is_daily:
             start_idx = self.get_col_index("Start Date")
             if start_idx != -1:
-                for i in range(2):
+                for offset in range(2):  # 0: Start, 1: End
                     de = QDateEdit()
                     de.setCalendarPopup(True)
                     de.setDate(QDate.currentDate())
-                    de.setStyleSheet("""
-                        QDateEdit {
-                            font-size: 12px;
-                            padding: 4px;
-                            min-height: 25px;
-                        }
-                    """)
-                    de.dateChanged.connect(lambda checked, r=row: self.calculate_daily_days(r))
-                    self.table.setCellWidget(row, start_idx + i, de)
-        
-        # ကျန်တဲ့ columns တွေအတွက် items တွေကို editable ဖြစ်အောင်လုပ်မယ်
-        qty_idx = self.get_col_index("Qty")
-        price_idx = self.get_col_index("Unit Price")
-        days_idx = self.get_col_index("Days")
-        
-        # Qty column
-        if qty_idx != -1:
-            item = self.table.item(row, qty_idx)
-            if not item:
-                item = QTableWidgetItem("0")
-                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                item.setFlags(item.flags() | Qt.ItemIsEditable)
-                self.table.setItem(row, qty_idx, item)
-        
-        # Unit Price column
-        if price_idx != -1:
-            item = self.table.item(row, price_idx)
-            if not item:
-                item = QTableWidgetItem("0")
-                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                item.setFlags(item.flags() | Qt.ItemIsEditable)
-                self.table.setItem(row, price_idx, item)
-        
-        # Days column
-        if days_idx != -1:
-            item = self.table.item(row, days_idx)
-            if not item:
-                item = QTableWidgetItem("")
-                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                item.setFlags(item.flags() | Qt.ItemIsEditable)
-                self.table.setItem(row, days_idx, item)
+                    de.setStyleSheet("font-size: 12px; padding: 4px;")
+                    de.dateChanged.connect(lambda checked, r=row: self.calculate_daily_days(r))  # ဒီ လိုင်း ကို ရှိနေတဲ့ အတိုင်း ချိန်ညှိပါ
+                    self.table.setCellWidget(row, start_idx + offset, de)
 
     def calculate_totals(self):
         """Total တွေကိုတွက်မယ်"""
@@ -626,11 +956,11 @@ class InvoiceDialog(QDialog):
     def on_working_days_toggled(self):
         """Working days checkbox ပြောင်းရင်"""
         saved_data = []
-        
+    
         qty_idx = self.get_col_index("Qty")
         price_idx = self.get_col_index("Unit Price")
         days_idx = self.get_col_index("Days")
-        
+    
         for row in range(self.table.rowCount()):
             saved_data.append({
                 "desc": self.table.item(row, 0).text() if self.table.item(row, 0) else "",
@@ -638,51 +968,67 @@ class InvoiceDialog(QDialog):
                 "price": self.table.item(row, price_idx).text() if price_idx != -1 and self.table.item(row, price_idx) else "0",
                 "days": self.table.item(row, days_idx).text() if days_idx != -1 and self.table.item(row, days_idx) else ""
             })
-        
+    
         self.update_table_headers()
-        for r in range(self.table.rowCount()): self.refresh_row_widgets(r)
-        self.calculate_totals()
+        self.updating_totals = True
+    
+        self.table.setRowCount(0)  # Clear all rows and re-add them to avoid editing issues
+    
+        for data in saved_data:
+            self.add_item_row()  # Add new row and set values
+            row = self.table.rowCount() - 1
+            self.table.item(row, 0).setText(data["desc"])
         
-        for row, data in enumerate(saved_data):
-            self.refresh_row_widgets(row)
-            self.table.setItem(row, 0, QTableWidgetItem(data["desc"]))
-            
             nq = self.get_col_index("Qty")
             if nq != -1:
-                if not self.table.item(row, nq):
-                    item = QTableWidgetItem(data["qty"])
-                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                    self.table.setItem(row, nq, item)
-                else:
-                    self.table.item(row, nq).setText(data["qty"])
-            
+                self.table.item(row, nq).setText(data["qty"])
+        
             np = self.get_col_index("Unit Price")
             if np != -1:
-                if not self.table.item(row, np):
-                    item = QTableWidgetItem(data["price"])
-                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                    self.table.setItem(row, np, item)
-                else:
-                    self.table.item(row, np).setText(data["price"])
-            
+                self.table.item(row, np).setText(data["price"])
+        
             nd = self.get_col_index("Days")
             if nd != -1:
-                if not self.table.item(row, nd):
-                    item = QTableWidgetItem(data["days"])
-                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                    self.table.setItem(row, nd, item)
-                else:
-                    self.table.item(row, nd).setText(data["days"])
-        
+                item = QTableWidgetItem(data["days"])
+                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self.table.setItem(row, nd, item)
+    
         self.updating_totals = False
         self.calculate_totals()
 
     def add_item_row(self):
+        """Item row အသစ်ထည့်မယ်"""
         row = self.table.rowCount()
         self.table.insertRow(row)
+        self.table.setItem(row, 0, QTableWidgetItem(""))
+        
+        # Qty
+        qty_idx = self.get_col_index("Qty")
+        if qty_idx != -1:
+            qty_item = QTableWidgetItem("0")
+            qty_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.table.setItem(row, qty_idx, qty_item)
+        
+        # Unit Price
+        price_idx = self.get_col_index("Unit Price")
+        if price_idx != -1:
+            price_item = QTableWidgetItem("0")
+            price_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.table.setItem(row, price_idx, price_item)
+        
+        # Amount
+        amt_idx = self.get_col_index("Amount")
+        if amt_idx != -1:
+            amt_item = QTableWidgetItem("0")
+            amt_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            amt_item.setFlags(amt_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row, amt_idx, amt_item)
+        
         self.refresh_row_widgets(row)
+        self.calculate_totals()
 
     def delete_specific_row(self):
+        """သီးခြား row တစ်ခုကို ဖျက်မယ်"""
         button = self.sender()
         if button:
             index = self.table.indexAt(button.pos())
@@ -694,6 +1040,7 @@ class InvoiceDialog(QDialog):
                 self.calculate_totals()
 
     def clear_row_data(self, row):
+        """Row data ကိုရှင်းမယ်"""
         item = self.table.item(row, 0)
         if item:
             item.setText("")
@@ -701,21 +1048,9 @@ class InvoiceDialog(QDialog):
         self.calculate_totals()
 
     def on_cell_changed(self, item):
-        # Numeric column တွေမှာ စာရိုက်ရင် total ပြန်တွက်ဖို့
+        """Cell ပြောင်းရင် auto-calculate လုပ်မယ်"""
         if not self.updating_totals:
             self.calculate_totals()
-            
-            qty_idx = self.get_col_index("Qty")
-            price_idx = self.get_col_index("Unit Price")
-            days_idx = self.get_col_index("Days")
-            
-            # If Qty or Unit Price changed, update amount
-            if col == qty_idx or col == price_idx:
-                self.calculate_totals()
-            
-            # If Days changed in working days mode
-            if col == days_idx:
-                self.calculate_totals()
 
     def on_invoice_type_changed(self):
         """Invoice type ပြောင်းရင်"""
@@ -727,16 +1062,16 @@ class InvoiceDialog(QDialog):
         """Daily mode အတွက် ရက်အရေအတွက်တွက်မယ်"""
         s_idx = self.get_col_index("Start Date")
         d_idx = self.get_col_index("Days")
-        
+    
         if s_idx != -1 and d_idx != -1:
             start_widget = self.table.cellWidget(row, s_idx)
-            end_widget = self.table.cellWidget(row, s_idx + 1)
-            
+            end_widget = self.table.cellWidget(row, s_idx + 1)  # ဒီ လိုင်း ကို မတွေ့ရင် ထည့်ပါ။ ရှိရင် ဒီအတိုင်း ပြင်ပါ။
+        
             if start_widget and end_widget:
                 s_d = start_widget.date()
                 e_d = end_widget.date()
                 diff = max(1, s_d.daysTo(e_d) + 1)
-                
+            
                 self.updating_totals = True
                 item = self.table.item(row, d_idx)
                 if not item:
@@ -746,7 +1081,7 @@ class InvoiceDialog(QDialog):
                 else:
                     item.setText(str(diff))
                 self.updating_totals = False
-                
+            
                 self.calculate_totals()
                 
     def load_invoice_data(self, invoice_id):
@@ -811,7 +1146,6 @@ class InvoiceDialog(QDialog):
             self.show_ph.setChecked(bool(invoice['contact_ph']))
             self.show_em.setChecked(bool(invoice['contact_email']))
             
-            # === ပျောက်နေတဲ့ data တွေကို ဖြည့်မယ် ===
             # Title (inv_title)
             if invoice['inv_title']:
                 self.inv_title.setText(invoice['inv_title'])
@@ -820,11 +1154,9 @@ class InvoiceDialog(QDialog):
             
             # Service Type (service_type)
             if invoice['service_type']:
-                # service_type ကို combo box မှာရှာမယ်
                 service_text = invoice['service_type']
                 found_service = False
                 for i in range(self.service_cat_cb.count()):
-                    # Emoji ပါတဲ့ items တွေကို စစ်မယ်
                     item_text = self.service_cat_cb.itemText(i)
                     if service_text in item_text or item_text in service_text:
                         self.service_cat_cb.setCurrentIndex(i)
@@ -1235,62 +1567,76 @@ class InvoiceDialog(QDialog):
         try:
             from .pdf_generator import InvoicePDFGenerator, number_to_words_mm
 
-            # ── BUG 1 FIX: service_type ထဲက emoji ကိုဖြုတ်မယ် ──────────────
+            # ── Mother Company အချက်အလက်ကို database ကနေ တိုက်ရိုက်ယူမယ် ───────
+            mother_company_data = {
+                'name': "N/A",
+                'phone': "",
+                'email': "",
+                'address': "",
+                'logo': None,
+                'tax_number': "N/A",
+                'bank_name': "",
+                'beneficiary': "",
+                'account_no': "",
+                'kpay_no': ""
+            }
+
+            if self.selected_mother_company:
+                mc = self.selected_mother_company
+                mother_company_data.update({
+                    'name': mc.get('name', self.company_name_display.text() or "N/A"),
+                    'phone': mc.get('phone', ""),
+                    'email': mc.get('email', ""),
+                    'address': mc.get('address', ""),
+                    'logo': mc.get('logo') if mc.get('logo') and os.path.exists(mc.get('logo')) else None,
+                    'tax_number': mc.get('tax_number', self.company_tax_display.text() or "N/A"),
+                    'bank_name': mc.get('bank_name', ""),
+                    'beneficiary': mc.get('beneficiary', ""),
+                    'account_no': mc.get('account_no', ""),
+                    'kpay_no': mc.get('kpay_no', "")
+                })
+            else:
+                # fallback အနေနဲ့ UI ကနေ ယူထားတာကို သုံးလို့ရတယ် (ဒါပေမယ့် database က ပိုယုံကြည်စိတ်ချရတယ်)
+                details_text = self.company_details_display.text()
+                mother_company_data['name'] = self.company_name_display.text() or "N/A"
+                mother_company_data['tax_number'] = self.company_tax_display.text() or "N/A"
+
+            # ── Invoice data ဖွဲ့စည်းမယ် ────────────────────────────────────────
             raw_service = self.service_cat_cb.currentText()
-            # emoji နဲ့ space ကို strip (🛡️ Security → Security)
             service_type_clean = raw_service.split(' ', 1)[-1].strip() if ' ' in raw_service else raw_service.strip()
 
-            # ── BUG 2 FIX: inv_title ကို pass လုပ်မယ် ──────────────────────
-            inv_title_text = self.inv_title.text().strip()
+            inv_title_text = self.inv_title.text().strip() or "PROFESSIONAL SERVICE INVOICE"
 
             invoice_data = {
-                'mother_company': {
-                    'name': self.company_name_display.text(),
-                    'phone': (
-                        self.company_details_display.text()
-                        .split('|')[0].replace('📞', '').strip()
-                        if '📞' in self.company_details_display.text() else ''
-                    ),
-                    'email': (
-                        self.company_details_display.text()
-                        .split('|')[1].replace('✉️', '').strip()
-                        if '✉️' in self.company_details_display.text() else ''
-                    ),
-                    'address': (
-                        self.company_details_display.text()
-                        .split('|')[2].replace('📍', '').strip()
-                        if '📍' in self.company_details_display.text() else ''
-                    ),
-                    'logo': self.selected_mother_company.get('logo') if self.selected_mother_company else None
-                },
+                'mother_company': mother_company_data,
                 'client': {
-                    'company_name': self.client_cb.currentText(),
-                    'address': self.addr_cb.currentText(),
-                    'contact_name': self.contact_name.text(),
-                    'contact_pos': self.contact_pos.text(),
-                    'contact_ph': self.contact_ph.text(),
-                    'contact_email': self.contact_em.text(),
+                    'company_name': self.client_cb.currentText().strip(),
+                    'address': self.addr_cb.currentText().strip(),
+                    'contact_name': self.contact_name.text().strip(),
+                    'contact_pos': self.contact_pos.text().strip(),
+                    'contact_ph': self.contact_ph.text().strip(),
+                    'contact_email': self.contact_em.text().strip(),
                     'show_position': self.show_pos.isChecked(),
                     'show_phone': self.show_ph.isChecked(),
                     'show_email': self.show_em.isChecked()
                 },
                 'invoice': {
-                    'number': self.inv_no.text(),
+                    'number': self.inv_no.text().strip(),
                     'date': self.invoice_date.date().toString("dd MMM yyyy"),
                     'service_type': service_type_clean,
                     'inv_title': inv_title_text,
                 },
                 'payment': {
-                    'bank_name':   self.selected_mother_company.get('bank_name',   '') if self.selected_mother_company else '',
-                    'beneficiary': self.selected_mother_company.get('beneficiary', '') if self.selected_mother_company else '',
-                    'account_no':  self.selected_mother_company.get('account_no',  '') if self.selected_mother_company else '',
-                    'kpay_no':     self.selected_mother_company.get('kpay_no',     '') if self.selected_mother_company else '',
+                    'bank_name': mother_company_data['bank_name'],
+                    'beneficiary': mother_company_data['beneficiary'],
+                    'account_no': mother_company_data['account_no'],
+                    'kpay_no': mother_company_data['kpay_no'],
                 },
                 'items': [],
                 'totals': {}
             }
 
-            # ── Items စုဆောင်းမယ် ───────────────────────────────────────────
+            # Items စုဆောင်းခြင်း
             qty_idx   = self.get_col_index("Qty")
             price_idx = self.get_col_index("Unit Price")
             amt_idx   = self.get_col_index("Amount")
@@ -1302,58 +1648,53 @@ class InvoiceDialog(QDialog):
                 amt_item   = self.table.item(row, amt_idx)   if amt_idx   != -1 else None
 
                 if desc_item and desc_item.text().strip():
-                    def _to_float(item_obj, remove_comma=True):
+                    def safe_float(item_obj):
+                        if not item_obj:
+                            return 0.0
                         try:
-                            t = item_obj.text().replace(',', '') if remove_comma else item_obj.text()
-                            return float(t)
+                            return float(item_obj.text().replace(',', ''))
                         except:
                             return 0.0
 
                     invoice_data['items'].append({
-                        'description': desc_item.text(),
-                        'qty':        _to_float(qty_item)   if qty_item   else 0,
-                        'unit_price': _to_float(price_item) if price_item else 0,
-                        'amount':     _to_float(amt_item)   if amt_item   else 0,
+                        'description': desc_item.text().strip(),
+                        'qty': safe_float(qty_item),
+                        'unit_price': safe_float(price_item),
+                        'amount': safe_float(amt_item),
                     })
 
-            # ── Totals တွက်မယ် ──────────────────────────────────────────────
-            subtotal    = sum(i['amount'] for i in invoice_data['items'])
-            tax         = subtotal * 0.05 if self.tax_check.isChecked() else 0
-            adv_text    = self.advance_amt.text().replace(',', '')
-            advance     = float(adv_text) if adv_text else 0
-
+            # Totals တွက်ခြင်း
+            subtotal = sum(item['amount'] for item in invoice_data['items'])
+            tax = subtotal * 0.05 if self.tax_check.isChecked() else 0
+            advance = float(self.advance_amt.text().replace(',', '')) if self.advance_amt.text().strip() else 0
             grand_total = subtotal + tax - advance
 
-            # ── BUG 3 FIX: number_to_words_mm() ကိုခေါ်မယ် ─────────────────
             invoice_data['totals'] = {
-                'subtotal':        subtotal,
-                'tax':             tax,
-                'advance':         advance,
-                'grand_total':     grand_total,
-                'amount_in_words': number_to_words_mm(int(grand_total)),  # BUG 3 FIX
+                'subtotal': subtotal,
+                'tax': tax,
+                'advance': advance,
+                'grand_total': grand_total,
+                'amount_in_words': number_to_words_mm(int(round(grand_total))),
             }
 
-            # ── File save dialog ─────────────────────────────────────────────
-            from PySide6.QtWidgets import QFileDialog
+            # PDF သိမ်းတဲ့ dialog
             file_path, _ = QFileDialog.getSaveFileName(
                 self,
                 "Save Invoice PDF",
-                f"invoice_{self.inv_no.text()}.pdf",
+                f"invoice_{self.inv_no.text().replace('/', '-')}.pdf",
                 "PDF Files (*.pdf)"
             )
 
             if file_path:
                 generator = InvoicePDFGenerator(file_path)
                 generator.create_invoice(invoice_data)
-                from PySide6.QtWidgets import QMessageBox
                 QMessageBox.information(
                     self,
-                    "✅ Success",
-                    f"Invoice PDF saved!\n\n{file_path}"
+                    "✅ PDF ထုတ်ပြီးပါပြီ",
+                    f"သိမ်းပြီးပါပြီ\n\n{file_path}"
                 )
 
         except Exception as e:
-            from PySide6.QtWidgets import QMessageBox
-            QMessageBox.critical(self, "Error", f"Failed to generate PDF: {str(e)}")
+            QMessageBox.critical(self, "Error", f"PDF ထုတ်မရပါ\n\n{str(e)}")
             import traceback
             traceback.print_exc()
