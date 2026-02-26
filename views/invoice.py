@@ -890,17 +890,8 @@ class InvoiceDialog(QDialog):
         # Delete Button
         del_idx = self.get_col_index("Del")
         if del_idx != -1:
-            from PySide6.QtWidgets import QStyle as _QStyle
-            from PySide6.QtCore import QSize as _QSize
-            del_btn = QPushButton()
-            del_btn.setIcon(del_btn.style().standardIcon(_QStyle.SP_DialogCloseButton))
-            del_btn.setIconSize(_QSize(14, 14))
-            del_btn.setFixedSize(30, 28)
-            del_btn.setToolTip("Delete row")
-            del_btn.setStyleSheet(
-                "QPushButton{background:#ef4444;border:none;border-radius:4px;}"
-                "QPushButton:hover{background:#dc2626;}"
-            )
+            del_btn = QPushButton("🗑️")
+            del_btn.setStyleSheet("color: #ef4444; border: none; font-size: 16px; background: transparent;")
             del_btn.clicked.connect(self.delete_specific_row)
             self.table.setCellWidget(row, del_idx, del_btn)
     
@@ -1656,13 +1647,15 @@ class InvoiceDialog(QDialog):
                 'client': {
                     'company_name': self.client_cb.currentText().strip(),
                     'address': self.addr_cb.currentText().strip(),
-                    'contact_name': self.contact_name.text().strip(),
-                    'contact_pos': self.contact_pos.text().strip(),
-                    'contact_ph': self.contact_ph.text().strip(),
-                    'contact_email': self.contact_em.text().strip(),
+                    # toggle နှိပ်မှ contact info ပေါ်မယ်၊ မနှိပ်ရင် None → PDF မှာ "Valued Client" ပြမယ်
+                    'contact_name':  self.contact_name.text().strip() if self.show_name.isChecked() else None,
+                    'contact_pos':   self.contact_pos.text().strip()  if self.show_pos.isChecked()  else None,
+                    'contact_ph':    self.contact_ph.text().strip()   if self.show_ph.isChecked()   else None,
+                    'contact_email': self.contact_em.text().strip()   if self.show_em.isChecked()   else None,
                     'show_position': self.show_pos.isChecked(),
-                    'show_phone': self.show_ph.isChecked(),
-                    'show_email': self.show_em.isChecked()
+                    'show_phone':    self.show_ph.isChecked(),
+                    'show_email':    self.show_em.isChecked(),
+                    'show_name':     self.show_name.isChecked(),
                 },
                 'invoice': {
                     'number': self.inv_no.text().strip(),

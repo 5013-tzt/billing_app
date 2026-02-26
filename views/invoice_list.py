@@ -124,7 +124,7 @@ class InvoiceListDialog(QDialog):
 
         # SP_TrashIcon — trash icon (Windows 10+ native, fallback on older)
         self.delete_btn = QPushButton(" Delete")
-        self.delete_btn.setIcon(_icon(self, QStyle.SP_DialogCloseButton))
+        self.delete_btn.setIcon(_icon(self, QStyle.SP_TrashIcon))
         self.delete_btn.setIconSize(QSize(18, 18))
         self.delete_btn.setFixedHeight(40)
         self.delete_btn.setFixedWidth(110)
@@ -233,7 +233,7 @@ class InvoiceListDialog(QDialog):
         hl.addWidget(b_edit)
 
         b_del = QPushButton()
-        b_del.setIcon(_icon(self, QStyle.SP_DialogCloseButton))
+        b_del.setIcon(_icon(self, QStyle.SP_TrashIcon))
         b_del.setIconSize(ICO)
         b_del.setFixedSize(BTN)
         b_del.setToolTip("Delete Invoice")
@@ -332,13 +332,17 @@ class InvoiceListDialog(QDialog):
                 'client': {
                     'company_name': inv['company_name'] or '',
                     'address': inv['address'] or '',
-                    'contact_name': inv['contact_name'] or inv['c1_name'] or '',
-                    'contact_pos': inv['contact_pos'] or inv['c1_pos'] or '',
-                    'contact_ph': inv['contact_ph'] or inv['c1_ph'] or '',
-                    'contact_email': inv['contact_email'] or inv['c1_em'] or '',
+                    # toggle မနှိပ်ဘဲ save ထားရင် contact_name = NULL → pdf မှာ "Valued Client"
+                    # toggle နှိပ်ပြီး save ထားရင် contact_name = value → pdf မှာ ထိုတန်ဖိုး
+                    # c1_name fallback မသုံးရ — toggle မနှိပ်ဘဲ c1_name ပါလာမှာ
+                    'contact_name':  inv['contact_name'] or None,
+                    'contact_pos':   inv['contact_pos']  or None,
+                    'contact_ph':    inv['contact_ph']   or None,
+                    'contact_email': inv['contact_email'] or None,
                     'show_position': bool(inv['contact_pos']),
-                    'show_phone': bool(inv['contact_ph']),
-                    'show_email': bool(inv['contact_email']),
+                    'show_phone':    bool(inv['contact_ph']),
+                    'show_email':    bool(inv['contact_email']),
+                    'show_name':     bool(inv['contact_name']),
                 },
                 'invoice': {
                     'number': inv['invoice_no'] or '',

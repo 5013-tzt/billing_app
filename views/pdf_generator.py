@@ -383,18 +383,23 @@ class InvoicePDFGenerator:
         # Left: client info lines
         client_lines = []
 
+        # Name — show_name toggle နှိပ်မှ contact_name ပေါ်မယ်
+        # toggle မနှိပ်ရင် (contact_name=None) → "Valued Client" ပြမယ်
         if client.get('contact_name'):
             client_lines.append(Paragraph(client['contact_name'], self.styles['ClientName']))
         else:
             client_lines.append(Paragraph("Valued Client", self.styles['ClientName']))
 
-        if client.get('show_position') and client.get('contact_pos'):
+        # Position — show_position toggle + data ၂ ခုလုံး လိုတယ်
+        if client.get('contact_pos'):
             client_lines.append(Paragraph(client['contact_pos'], self.styles['NormalText']))
 
-        if client.get('show_phone') and client.get('contact_ph'):
+        # Phone — show_phone toggle + data ၂ ခုလုံး လိုတယ်
+        if client.get('contact_ph'):
             client_lines.append(Paragraph(f"Tel: {client['contact_ph']}", self.styles['NormalText']))
 
-        if client.get('show_email') and client.get('contact_email'):
+        # Email — show_email toggle + data ၂ ခုလုံး လိုတယ်
+        if client.get('contact_email'):
             client_lines.append(Paragraph(f"Email: {client['contact_email']}", self.styles['NormalText']))
 
         if client.get('company_name'):
