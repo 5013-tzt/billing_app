@@ -890,8 +890,17 @@ class InvoiceDialog(QDialog):
         # Delete Button
         del_idx = self.get_col_index("Del")
         if del_idx != -1:
-            del_btn = QPushButton("🗑️")
-            del_btn.setStyleSheet("color: #ef4444; border: none; font-size: 16px; background: transparent;")
+            from PySide6.QtWidgets import QStyle as _QStyle
+            from PySide6.QtCore import QSize as _QSize
+            del_btn = QPushButton()
+            del_btn.setIcon(del_btn.style().standardIcon(_QStyle.SP_DialogCloseButton))
+            del_btn.setIconSize(_QSize(14, 14))
+            del_btn.setFixedSize(30, 28)
+            del_btn.setToolTip("Delete row")
+            del_btn.setStyleSheet(
+                "QPushButton{background:#ef4444;border:none;border-radius:4px;}"
+                "QPushButton:hover{background:#dc2626;}"
+            )
             del_btn.clicked.connect(self.delete_specific_row)
             self.table.setCellWidget(row, del_idx, del_btn)
     

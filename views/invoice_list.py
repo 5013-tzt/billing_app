@@ -124,7 +124,7 @@ class InvoiceListDialog(QDialog):
 
         # SP_TrashIcon — trash icon (Windows 10+ native, fallback on older)
         self.delete_btn = QPushButton(" Delete")
-        self.delete_btn.setIcon(_icon(self, QStyle.SP_TrashIcon))
+        self.delete_btn.setIcon(_icon(self, QStyle.SP_DialogCloseButton))
         self.delete_btn.setIconSize(QSize(18, 18))
         self.delete_btn.setFixedHeight(40)
         self.delete_btn.setFixedWidth(110)
@@ -233,7 +233,7 @@ class InvoiceListDialog(QDialog):
         hl.addWidget(b_edit)
 
         b_del = QPushButton()
-        b_del.setIcon(_icon(self, QStyle.SP_TrashIcon))
+        b_del.setIcon(_icon(self, QStyle.SP_DialogCloseButton))
         b_del.setIconSize(ICO)
         b_del.setFixedSize(BTN)
         b_del.setToolTip("Delete Invoice")
