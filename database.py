@@ -154,7 +154,7 @@ def init_db():
     if not settings:
         conn.execute('''
             INSERT INTO settings (id, admin_name, admin_user, password, theme)
-            VALUES (1, 'Administrator', 'admin', '1234', 'dark')
+            VALUES (1, 'Administrator', 'admin', '1234', 'light')
         ''')
     
     conn.commit()
@@ -168,9 +168,9 @@ def get_theme_preference():
         conn = get_db()
         result = conn.execute("SELECT theme FROM settings WHERE id=1").fetchone()
         conn.close()
-        return result['theme'] if result and result['theme'] else 'dark'
+        return result['theme'] if result and result['theme'] else 'light'
     except:
-        return 'dark'
+        return 'light'
 
 
 def set_theme_preference(theme_name):

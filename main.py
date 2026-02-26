@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QLineEdit
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap, QFont
+from PySide6.QtGui import QPixmap, QFont, QPalette, QColor
 
 # Internal Imports
 from database import get_db, init_db, get_theme_preference
@@ -37,7 +37,7 @@ class Login(QDialog):
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
         t = QLabel(self.s['admin_name'] if self.s and self.s['admin_name'] else "LOGIN")
-        t.setStyleSheet("font-size: 18px; color: #BB86FC;")
+        t.setStyleSheet("font-size: 18px; color: #2563EB; font-weight: bold;")
         layout.addWidget(t)
         
         self.u = QLineEdit()
@@ -87,7 +87,7 @@ class MainWindow(QMainWindow):
         sidebar_layout.setSpacing(5)
         
         title_label = QLabel("📊 Billing System")
-        title_label.setStyleSheet("font-size: 16px; font-weight: bold; padding: 15px; color: #BB86FC;")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold; padding: 15px; color: #2563EB;")
         title_label.setAlignment(Qt.AlignCenter)
         sidebar_layout.addWidget(title_label)
         
@@ -154,6 +154,32 @@ def main():
     
     # Create application
     app = QApplication(sys.argv)
+
+    # ── Force Light Mode (OS dark mode ကို override လုပ်မယ်) ──────────
+    light_palette = QPalette()
+    light_palette.setColor(QPalette.Window,          QColor(255, 255, 255))
+    light_palette.setColor(QPalette.WindowText,      QColor(26,  26,  26))
+    light_palette.setColor(QPalette.Base,            QColor(255, 255, 255))
+    light_palette.setColor(QPalette.AlternateBase,   QColor(250, 250, 250))
+    light_palette.setColor(QPalette.ToolTipBase,     QColor(255, 255, 255))
+    light_palette.setColor(QPalette.ToolTipText,     QColor(26,  26,  26))
+    light_palette.setColor(QPalette.Text,            QColor(26,  26,  26))
+    light_palette.setColor(QPalette.Button,          QColor(240, 240, 240))
+    light_palette.setColor(QPalette.ButtonText,      QColor(26,  26,  26))
+    light_palette.setColor(QPalette.BrightText,      QColor(255, 0,   0))
+    light_palette.setColor(QPalette.Link,            QColor(37,  99,  235))
+    light_palette.setColor(QPalette.Highlight,       QColor(37,  99,  235))
+    light_palette.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
+    light_palette.setColor(QPalette.Mid,             QColor(200, 200, 200))
+    light_palette.setColor(QPalette.Shadow,          QColor(150, 150, 150))
+    light_palette.setColor(QPalette.Dark,            QColor(180, 180, 180))
+    light_palette.setColor(QPalette.Midlight,        QColor(230, 230, 230))
+    # Disabled state
+    light_palette.setColor(QPalette.Disabled, QPalette.Text,       QColor(170, 170, 170))
+    light_palette.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(170, 170, 170))
+    light_palette.setColor(QPalette.Disabled, QPalette.Base,       QColor(245, 245, 245))
+    app.setPalette(light_palette)
+    # ─────────────────────────────────────────────────────────────────
     
     # Apply global font
     font = QFont("Segoe UI", 10)

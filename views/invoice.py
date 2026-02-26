@@ -11,8 +11,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QDate, QTimer
 from PySide6.QtGui import QPixmap, QFont, QPalette, QColor
-from database import get_db, get_theme_preference
-from .styles import get_theme
+from database import get_db
+from .styles import STYLESHEET, get_theme
 from .pdf_generator import InvoicePDFGenerator
 import os
 
@@ -21,11 +21,8 @@ class InvoiceDialog(QDialog):
     def __init__(self, parent=None, invoice_id=None, mode='new'):
         super().__init__(parent)
         
-        # === အရေးကြီးဆုံး ပြင်ဆင်ချက် ===
-        # database ကနေ လက်ရှိ theme ကိုယူပြီး stylesheet ချိန်းမယ်
-        current_theme = get_theme_preference()
-        theme_obj = get_theme(current_theme)
-        self.setStyleSheet(theme_obj.get_stylesheet())
+        from .styles import STYLESHEET
+        self.setStyleSheet(STYLESHEET)
         
         # Edit mode ဆိုရင် window title ပြောင်းမယ်
         if mode == 'edit' and invoice_id:
@@ -52,34 +49,7 @@ class InvoiceDialog(QDialog):
         self.init_ui()
         self.load_clients_list()
         self.load_mother_companies()
-        # table အရောင်ပြောင်းတာကို စမ်းသပ်ခြင်း
-        self.table.setStyleSheet("""
-            QTableWidget {
-                background-color: #1e1e1e;
-                color: #e0e0e0;
-                gridline-color: #444;
-                selection-background-color: #535bf4;     /* ရွေးတဲ့နေရာ နောက်ခံ - ပိုမြင်ရအောင် လင်းတဲ့ အရောင် */
-                selection-color: white;                   /* ရွေးတဲ့ စာသား အရောင် - အဖြူ သေချာပါစေ */
-                alternate-background-color: #2a2a2a;
-            }
-
-            QTableWidget::item {
-                color: #e0e0e0;
-            }
-
-            QTableWidget::item:selected,
-            QTableWidget::item:focus,
-            QTableWidget::item:selected:focus {
-                background-color: #535bf4 !important;
-                color: white !important;
-                border: 1px solid #7289da;               /* ဘောင်ကို ပိုမြင်သာအောင် ထည့်နိုင်တယ် */
-            }
-
-            QTableWidget::item:selected:!active {
-                background-color: #3b3f8c;
-                color: white;
-            }
-        """)
+        # Table uses global light stylesheet — no override needed
         
         # Edit mode ဆိုရင် invoice data ကို load မယ်
         if self.edit_mode and self.current_invoice_id:
@@ -438,12 +408,60 @@ class InvoiceDialog(QDialog):
         self.work_day_check.stateChanged.connect(self.on_working_days_toggled)
         items_lay.addWidget(self.work_day_check)
         
-        # Table - ပိုကြီးအောင်
+        # Table
         self.table = QTableWidget(0, 5)
-        self.table.setMinimumHeight(350)  # 250 > 350
+        self.table.setMinimumHeight(350)
         self.table.setMaximumHeight(400)
         self.table.verticalHeader().setVisible(False)
         self.table.itemChanged.connect(self.on_cell_changed)
+        self.table.setAlternatingRowColors(True)
+
+        # Cell editor (inline QLineEdit) — OS dark override ကို ဖယ်ချနိုင်တဲ့ တစ်ခုတည်းသောနည်း
+        from PySide6.QtWidgets import QStyledItemDelegate
+        class LightDelegate(QStyledItemDelegate):
+            def createEditor(self, parent, option, index):
+                editor = super().createEditor(parent, option, index)
+                if editor:
+                    editor.setStyleSheet(
+                        "QLineEdit, QWidget {"
+                        "  background-color: #FFFFFF;"
+                        "  color: #1A1A1A;"
+                        "  border: 2px solid #2563EB;"
+                        "  padding: 2px 4px;"
+                        "  font-size: 11pt;"
+                        "}"
+                    )
+                return editor
+        self.table.setItemDelegate(LightDelegate(self.table))
+
+        self.table.setStyleSheet("""
+            QTableWidget {
+                background-color: #FFFFFF;
+                color: #1A1A1A;
+                alternate-background-color: #F8F8F8;
+                gridline-color: #DDDDDD;
+                selection-background-color: #DBEAFE;
+                selection-color: #1A1A1A;
+                border: 1px solid #DDDDDD;
+                border-radius: 6px;
+            }
+            QTableWidget::item {
+                color: #1A1A1A;
+                padding: 5px;
+            }
+            QTableWidget::item:selected {
+                background-color: #DBEAFE;
+                color: #1A1A1A;
+            }
+            QHeaderView::section {
+                background-color: #F5F5F5;
+                color: #1A1A1A;
+                padding: 8px;
+                border: none;
+                border-bottom: 2px solid #2563EB;
+                font-weight: bold;
+            }
+        """)
         
         # Table font
         table_font = QFont()
@@ -472,125 +490,142 @@ class InvoiceDialog(QDialog):
         items_lay.addLayout(btn_lay)
         layout.addWidget(items_gb)
 
-        # --- Financial Summary - ပိုကြီးအောင် ---
+        # --- Financial Summary ---
         summary_gb = QGroupBox("💰 Financial Summary")
         summary_gb.setFont(items_gb_font)
-        summary_gb.setMinimumHeight(150)
-        
+        summary_gb.setMinimumHeight(220)
+
         summary_layout = QHBoxLayout(summary_gb)
-        summary_layout.setSpacing(20)
-        summary_layout.setContentsMargins(20, 20, 20, 20)
-        
-        # Left section - Subtotal & Tax
+        summary_layout.setSpacing(15)
+        summary_layout.setContentsMargins(15, 25, 15, 15)
+
+        # ── Left: Subtotal & Tax ──────────────────────────────────────
         left_frame = QFrame()
         left_frame.setFrameShape(QFrame.StyledPanel)
+        left_frame.setMinimumWidth(280)
         left_layout = QHBoxLayout(left_frame)
-        left_layout.setSpacing(20)
-        left_layout.setContentsMargins(10, 10, 10, 10)
-        
+        left_layout.setSpacing(10)
+        left_layout.setContentsMargins(12, 12, 12, 12)
+
+        val_font = QFont()
+        val_font.setPointSize(15)
+        val_font.setBold(True)
+        lbl_font = QFont()
+        lbl_font.setPointSize(11)
+        lbl_font.setBold(True)
+
         # Subtotal
         subtotal_frame = QFrame()
         subtotal_frame.setFrameShape(QFrame.StyledPanel)
         subtotal_layout = QVBoxLayout(subtotal_frame)
-        subtotal_layout.setSpacing(5)
-        
+        subtotal_layout.setSpacing(6)
+        subtotal_layout.setContentsMargins(10, 10, 10, 10)
+
         subtotal_title = QLabel("SUBTOTAL")
-        subtotal_title_font = QFont()
-        subtotal_title_font.setPointSize(14)
-        subtotal_title_font.setBold(True)
-        subtotal_title.setFont(subtotal_title_font)
+        subtotal_title.setFont(lbl_font)
         subtotal_layout.addWidget(subtotal_title, 0, Qt.AlignCenter)
-        
+
         self.subtotal_lbl = QLabel("0 MMK")
-        subtotal_value_font = QFont()
-        subtotal_value_font.setPointSize(18)
-        subtotal_value_font.setBold(True)
-        self.subtotal_lbl.setFont(subtotal_value_font)
+        self.subtotal_lbl.setFont(val_font)
         subtotal_layout.addWidget(self.subtotal_lbl, 0, Qt.AlignCenter)
         left_layout.addWidget(subtotal_frame)
-        
+
         # Tax
         tax_frame = QFrame()
         tax_frame.setFrameShape(QFrame.StyledPanel)
         tax_layout = QVBoxLayout(tax_frame)
-        tax_layout.setSpacing(5)
-        
+        tax_layout.setSpacing(6)
+        tax_layout.setContentsMargins(10, 10, 10, 10)
+
         tax_title = QLabel("TAX (5%)")
-        tax_title.setFont(subtotal_title_font)
+        tax_title.setFont(lbl_font)
         tax_layout.addWidget(tax_title, 0, Qt.AlignCenter)
-        
+
         self.tax_lbl = QLabel("0 MMK")
-        self.tax_lbl.setFont(subtotal_value_font)
+        self.tax_lbl.setFont(val_font)
         tax_layout.addWidget(self.tax_lbl, 0, Qt.AlignCenter)
         left_layout.addWidget(tax_frame)
-        
+
         summary_layout.addWidget(left_frame)
-        
-        # Middle section - Tax Check & Advance
+
+        # ── Middle: Tax checkbox + Deduction ─────────────────────────
         middle_frame = QFrame()
         middle_frame.setFrameShape(QFrame.StyledPanel)
         middle_layout = QVBoxLayout(middle_frame)
         middle_layout.setSpacing(10)
-        middle_layout.setContentsMargins(15, 15, 15, 15)
-        
-        # Tax Check
+        middle_layout.setContentsMargins(15, 12, 15, 12)
+
         self.tax_check = QCheckBox("💳 Apply Commercial Tax")
         tax_check_font = QFont()
-        tax_check_font.setPointSize(13)
+        tax_check_font.setPointSize(11)
         tax_check_font.setBold(True)
         self.tax_check.setFont(tax_check_font)
-        self.tax_check.setMinimumHeight(40)
+        self.tax_check.setMinimumHeight(32)
         self.tax_check.stateChanged.connect(self.calculate_totals)
         middle_layout.addWidget(self.tax_check)
-        
-        # Advance
-        advance_frame = QFrame()
-        advance_frame.setFrameShape(QFrame.StyledPanel)
-        advance_inner = QHBoxLayout(advance_frame)
-        advance_inner.setSpacing(10)
-        
-        advance_label = QLabel("Advance:")
-        advance_label.setFont(subtotal_title_font)
-        advance_inner.addWidget(advance_label)
-        
+
+        # Deduction label
+        deduction_lbl = QLabel("Deduction / Advance:")
+        deduction_lbl.setFont(lbl_font)
+        deduction_lbl.setMinimumHeight(24)
+        middle_layout.addWidget(deduction_lbl)
+
+        # Deduction inputs row
+        deduction_row = QHBoxLayout()
+        deduction_row.setSpacing(8)
+
+        input_font = QFont()
+        input_font.setPointSize(11)
+
+        amt_font = QFont()
+        amt_font.setPointSize(13)
+        amt_font.setBold(True)
+
+        # Description textbox (wider)
         self.advance_text = QLineEdit()
-        self.advance_text.setPlaceholderText("Description")
-        self.advance_text.setMinimumWidth(200)
-        self.advance_text.setMinimumHeight(40)
-        self.advance_text.setFont(table_font)
-        advance_inner.addWidget(self.advance_text)
-        
+        self.advance_text.setPlaceholderText("Description (e.g. Advance paid)")
+        self.advance_text.setMinimumHeight(42)
+        self.advance_text.setFont(input_font)
+        deduction_row.addWidget(self.advance_text, 3)   # stretch 3 = wider
+
+        # Amount box (bigger font, fixed width)
         self.advance_amt = QLineEdit("0")
-        self.advance_amt.setFixedWidth(120)
-        self.advance_amt.setMinimumHeight(40)
-        self.advance_amt.setFont(subtotal_value_font)
+        self.advance_amt.setMinimumWidth(150)
+        self.advance_amt.setMinimumHeight(42)
+        self.advance_amt.setFont(amt_font)
         self.advance_amt.setAlignment(Qt.AlignRight)
         self.advance_amt.textChanged.connect(self.calculate_totals)
-        advance_inner.addWidget(self.advance_amt)
-        
-        middle_layout.addWidget(advance_frame)
-        summary_layout.addWidget(middle_frame, 2)
-        
-        # Right section - Grand Total
+        deduction_row.addWidget(self.advance_amt, 1)    # stretch 1 = narrower
+
+        middle_layout.addLayout(deduction_row)
+        summary_layout.addWidget(middle_frame, 3)
+
+        # ── Right: Grand Total ────────────────────────────────────────
         right_frame = QFrame()
         right_frame.setFrameShape(QFrame.StyledPanel)
+        right_frame.setMinimumWidth(220)
         right_layout = QVBoxLayout(right_frame)
-        right_layout.setSpacing(5)
+        right_layout.setSpacing(8)
         right_layout.setContentsMargins(20, 15, 20, 15)
-        
+        right_layout.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+
         grand_title = QLabel("GRAND TOTAL")
-        grand_title.setFont(subtotal_title_font)
+        grand_title_font = QFont()
+        grand_title_font.setPointSize(12)
+        grand_title_font.setBold(True)
+        grand_title.setFont(grand_title_font)
         right_layout.addWidget(grand_title, 0, Qt.AlignRight)
-        
+
         self.grand_total_lbl = QLabel("0 MMK")
         grand_total_font = QFont()
-        grand_total_font.setPointSize(26)
+        grand_total_font.setPointSize(22)
         grand_total_font.setBold(True)
         self.grand_total_lbl.setFont(grand_total_font)
+        self.grand_total_lbl.setMinimumHeight(50)
         right_layout.addWidget(self.grand_total_lbl, 0, Qt.AlignRight)
-        
+
         summary_layout.addWidget(right_frame)
-        
+
         layout.addWidget(summary_gb)
         
         # Small stretch
