@@ -114,6 +114,13 @@ def init_db():
             cursor.execute("ALTER TABLE invoices ADD COLUMN service_type TEXT DEFAULT ''")
         except:
             print("service_type column may already exist")
+
+    if 'paid_date' not in column_names:
+        print("Adding paid_date column to invoices table...")
+        try:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN paid_date TEXT DEFAULT NULL")
+        except:
+            print("paid_date column may already exist")
     
     # Invoice items table
     conn.execute('''

@@ -157,6 +157,30 @@ class InvoicePDFGenerator:
             fontName='Helvetica'
         ))
 
+        # ✅ FIX: Invoice Label for Receipt (gray, bold)
+        self.styles.add(ParagraphStyle(
+            name='InvoiceLabel',
+            fontSize=8,
+            textColor=colors.gray,
+            alignment=TA_LEFT,
+            spaceBefore=0,
+            spaceAfter=2,
+            leading=10,
+            fontName='Helvetica-Bold'
+        ))
+
+        # ✅ FIX: Invoice Value for Receipt (black, normal)
+        self.styles.add(ParagraphStyle(
+            name='InvoiceValue',
+            fontSize=9,
+            textColor=colors.black,
+            alignment=TA_LEFT,
+            spaceBefore=0,
+            spaceAfter=4,
+            leading=11,
+            fontName='Helvetica'
+        ))
+
         # Total Label light gray
         self.styles.add(ParagraphStyle(
             name='TotalLabelLight',
@@ -383,23 +407,18 @@ class InvoicePDFGenerator:
         # Left: client info lines
         client_lines = []
 
-        # Name — show_name toggle နှိပ်မှ contact_name ပေါ်မယ်
-        # toggle မနှိပ်ရင် (contact_name=None) → "Valued Client" ပြမယ်
         if client.get('contact_name'):
             client_lines.append(Paragraph(client['contact_name'], self.styles['ClientName']))
         else:
             client_lines.append(Paragraph("Valued Client", self.styles['ClientName']))
 
-        # Position — show_position toggle + data ၂ ခုလုံး လိုတယ်
-        if client.get('contact_pos'):
+        if client.get('show_position') and client.get('contact_pos'):
             client_lines.append(Paragraph(client['contact_pos'], self.styles['NormalText']))
 
-        # Phone — show_phone toggle + data ၂ ခုလုံး လိုတယ်
-        if client.get('contact_ph'):
+        if client.get('show_phone') and client.get('contact_ph'):
             client_lines.append(Paragraph(f"Tel: {client['contact_ph']}", self.styles['NormalText']))
 
-        # Email — show_email toggle + data ၂ ခုလုံး လိုတယ်
-        if client.get('contact_email'):
+        if client.get('show_email') and client.get('contact_email'):
             client_lines.append(Paragraph(f"Email: {client['contact_email']}", self.styles['NormalText']))
 
         if client.get('company_name'):
@@ -586,6 +605,191 @@ class InvoicePDFGenerator:
 # ============================================================
 # Number → English Words (MMK)
 # ============================================================
+    def create_receipt(self, invoice_data):
+        """Payment Receipt PDF ဆောက်လုပ်ခြင်း — Paid invoice များအတွက်"""
+        self.elements = []
+        page_width = A4[0] - 24*mm
+
+        mother  = invoice_data.get('mother_company', {})
+        client  = invoice_data.get('client', {})
+        inv     = invoice_data.get('invoice', {})
+        totals  = invoice_data.get('totals', {})
+        payment = invoice_data.get('payment', {})
+
+        # ── Header ────────────────────────────────────────────────────
+        self.elements.append(Paragraph("RECEIPT", self.styles['InvoiceTitle']))
+        self.elements.append(Spacer(1, 2*mm))
+
+        if mother.get('name'):
+            self.elements.append(Paragraph(mother['name'], self.styles['MotherName']))
+        if mother.get('phone'):
+            self.elements.append(Paragraph(f"Hotline: {mother['phone']}", self.styles['Hotline']))
+        if mother.get('email'):
+            self.elements.append(Paragraph(mother['email'], self.styles['Hotline']))
+
+        self.elements.append(Spacer(1, 2*mm))
+        self.elements.append(HRFlowable(
+            width="100%", thickness=0.5, color=colors.lightgrey,
+            spaceBefore=0, spaceAfter=2*mm
+        ))
+
+        # ── Client + Receipt Info (2 columns) ─────────────────────────
+        client_lines = []
+        if client.get('contact_name'):
+            client_lines.append(Paragraph(client['contact_name'], self.styles['ClientName']))
+        else:
+            client_lines.append(Paragraph("Valued Client", self.styles['ClientName']))
+        if client.get('contact_pos'):
+            client_lines.append(Paragraph(client['contact_pos'], self.styles['NormalText']))
+        if client.get('contact_ph'):
+            client_lines.append(Paragraph(f"Tel: {client['contact_ph']}", self.styles['NormalText']))
+        if client.get('company_name'):
+            client_lines.append(Paragraph(client['company_name'], self.styles['ClientName']))
+        if client.get('address'):
+            client_lines.append(Paragraph(client['address'], self.styles['NormalText']))
+
+        paid_date = inv.get('paid_date') or datetime.now().strftime('%Y-%m-%d')
+        receipt_lines = [
+            Paragraph("RECEIPT NO", self.styles['InvoiceLabel']),
+            Paragraph(f"REC-{inv.get('number','')}", self.styles['InvoiceValue']),
+            Paragraph("INVOICE REF", self.styles['InvoiceLabel']),
+            Paragraph(inv.get('number', ''), self.styles['InvoiceValue']),
+            Paragraph("INVOICE DATE", self.styles['InvoiceLabel']),
+            Paragraph(inv.get('date', ''), self.styles['InvoiceValue']),
+            Paragraph("PAID DATE", self.styles['InvoiceLabel']),
+            Paragraph(paid_date, self.styles['InvoiceValue']),
+            Paragraph("SERVICE", self.styles['InvoiceLabel']),
+            Paragraph(inv.get('service_type', ''), self.styles['InvoiceValue']),
+        ]
+
+        col_half = page_width / 2
+        info_table = Table(
+            [[client_lines, receipt_lines]],
+            colWidths=[col_half, col_half]
+        )
+        info_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        self.elements.append(info_table)
+        self.elements.append(Spacer(1, 5*mm))
+        self.elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.lightgrey,
+                                         spaceBefore=0, spaceAfter=3*mm))
+
+        # ── PAID STAMP box ────────────────────────────────────────────
+        stamp_style = ParagraphStyle(
+            'PaidStamp', fontSize=28, fontName='Helvetica-Bold',
+            textColor=colors.white, alignment=TA_CENTER, leading=32
+        )
+        stamp_table = Table(
+            [[Paragraph("RECEIVED WITH THANKS", stamp_style)]],
+            colWidths=[page_width]
+        )
+        stamp_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#16a34a')),
+            ('ROUNDEDCORNERS', [6]),
+            ('TOPPADDING', (0,0), (-1,-1), 10),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+        ]))
+        self.elements.append(stamp_table)
+        self.elements.append(Spacer(1, 5*mm))
+
+        # ── Amount Summary ────────────────────────────────────────────
+        grand_total = totals.get('grand_total', 0)
+        subtotal    = totals.get('subtotal', 0)
+        tax         = totals.get('tax', 0)
+        advance     = totals.get('advance', 0)
+        amount_words = totals.get('amount_in_words', '')
+
+        summary_data = [
+            ["Description", "Amount (MMK)"],
+        ]
+        if subtotal:
+            summary_data.append(["Subtotal", f"{subtotal:,.0f}"])
+        if tax:
+            summary_data.append(["Commercial Tax (5%)", f"{tax:,.0f}"])
+        if advance:
+            summary_data.append([f"Deduction / Advance", f"- {advance:,.0f}"])
+        summary_data.append(["TOTAL RECEIVED", f"{grand_total:,.0f}"])
+
+        col_desc  = page_width * 0.65
+        col_amt   = page_width * 0.35
+        sum_table = Table(summary_data, colWidths=[col_desc, col_amt])
+
+        n = len(summary_data)
+        sum_table.setStyle(TableStyle([
+            # Header row
+            ('BACKGROUND',    (0,0), (-1,0), colors.HexColor('#1e3a5f')),
+            ('TEXTCOLOR',     (0,0), (-1,0), colors.white),
+            ('FONTNAME',      (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE',      (0,0), (-1,0), 10),
+            ('ALIGN',         (1,0), (1,0), 'RIGHT'),
+            # Body
+            ('FONTSIZE',      (0,1), (-1,-2), 10),
+            ('ALIGN',         (1,1), (1,-1), 'RIGHT'),
+            ('ROWBACKGROUNDS',(0,1), (-1,-2), [colors.white, colors.HexColor('#f8fafc')]),
+            # Total row
+            ('BACKGROUND',    (0,n-1), (-1,n-1), colors.HexColor('#16a34a')),
+            ('TEXTCOLOR',     (0,n-1), (-1,n-1), colors.white),
+            ('FONTNAME',      (0,n-1), (-1,n-1), 'Helvetica-Bold'),
+            ('FONTSIZE',      (0,n-1), (-1,n-1), 12),
+            # Grid
+            ('GRID',          (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
+            ('TOPPADDING',    (0,0), (-1,-1), 6),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ('LEFTPADDING',   (0,0), (-1,-1), 8),
+            ('RIGHTPADDING',  (0,0), (-1,-1), 8),
+        ]))
+        self.elements.append(sum_table)
+        self.elements.append(Spacer(1, 4*mm))
+
+        # Amount in words
+        if amount_words:
+            words_style = ParagraphStyle(
+                'AmtWords', fontSize=9, fontName='Helvetica-Oblique',
+                textColor=colors.HexColor('#475569'), alignment=TA_LEFT
+            )
+            self.elements.append(
+                Paragraph(f"Amount in words: {amount_words}", words_style)
+            )
+
+        self.elements.append(Spacer(1, 8*mm))
+        self.elements.append(HRFlowable(width="100%", thickness=0.5,
+                                         color=colors.lightgrey,
+                                         spaceBefore=0, spaceAfter=2*mm))
+
+        # ── Signature line ────────────────────────────────────────────
+        sig_style = ParagraphStyle(
+            'Sig', fontSize=9, fontName='Helvetica',
+            textColor=colors.HexColor('#475569'), alignment=TA_CENTER
+        )
+        sig_table = Table(
+            [[Paragraph("_______________________", sig_style),
+              Paragraph("_______________________", sig_style)]],
+            colWidths=[page_width/2, page_width/2]
+        )
+        sig_table.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('TOPPADDING', (0,0), (-1,-1), 0),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+        ]))
+        self.elements.append(sig_table)
+
+        lbl_table = Table(
+            [[Paragraph("Authorized Signature", sig_style),
+              Paragraph("Received By", sig_style)]],
+            colWidths=[page_width/2, page_width/2]
+        )
+        lbl_table.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ]))
+        self.elements.append(lbl_table)
+
+        # ── Build ─────────────────────────────────────────────────────
+        return self.generate_invoice(invoice_data)
+
+
 def number_to_words_mm(num):
     """
     ဂဏန်းကို English စကားလုံးပြောင်းခြင်း

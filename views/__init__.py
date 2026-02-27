@@ -1,19 +1,35 @@
-# views/__init__.py
+"""
+Views Package Initialization
+=============================
+All view components for the billing system
+"""
+
+# Dialog imports
 from .clients import ClientDialog
-from .dashboard import DashboardView
 from .invoice import InvoiceDialog
-from .settings import SettingsDialog
-from .styles import STYLESHEET
 from .invoice_list import InvoiceListDialog
+from .settings import SettingsDialog
+
+# Page imports
+from .dashboard import Dashboard
+
+# Utility imports
+from .styles import get_theme
 from .pdf_generator import InvoicePDFGenerator
 
+# Define what's available when using "from views import *"
 __all__ = [
+    # Dialogs
     'ClientDialog',
-    'DashboardView', 
     'InvoiceDialog',
-    'SettingsDialog',
-    'STYLESHEET',
     'InvoiceListDialog',
-    'InvoicePDFGenerator',  # ဒါအသစ်ထည့်
-    'number_to_words_mm'     # ဒါအသစ်ထည့်
+    'SettingsDialog',
+    
+    # Pages
+    'Dashboard',
+    
+    # Utilities
+    'get_theme',
+    'THEMES',
+    'InvoicePDFGenerator',
 ]

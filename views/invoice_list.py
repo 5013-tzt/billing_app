@@ -1,17 +1,16 @@
-import sqlite3
 import os
+from datetime import datetime
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QLabel, QHeaderView, QMessageBox, QAbstractItemView,
-    QLineEdit, QWidget, QFileDialog, QStyle
+    QLineEdit, QWidget, QFileDialog, QStyle, QInputDialog
 )
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QDate
 from PySide6.QtGui import QColor
 from database import get_db
 
 
 def _icon(widget, sp):
-    """QStyle.StandardPixmap ကနေ icon ယူမယ် — font/emoji dependency မရှိ"""
     return widget.style().standardIcon(sp)
 
 
@@ -19,8 +18,8 @@ class InvoiceListDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Invoice List")
-        self.resize(1400, 700)
-        self.setMinimumSize(1200, 600)
+        self.resize(1450, 700)
+        self.setMinimumSize(1250, 600)
 
         from .styles import STYLESHEET
         self.setStyleSheet(STYLESHEET)
@@ -29,7 +28,7 @@ class InvoiceListDialog(QDialog):
         layout.setSpacing(10)
         layout.setContentsMargins(15, 15, 15, 15)
 
-        # Search bar
+        # ── Search bar ────────────────────────────────────────────────
         search_layout = QHBoxLayout()
         search_layout.setSpacing(10)
 
@@ -46,7 +45,6 @@ class InvoiceListDialog(QDialog):
         search_layout.addWidget(self.search_input)
         search_layout.addStretch()
 
-        # SP_BrowserReload — Windows/Mac/Linux အားလုံးပါ
         self.refresh_btn = QPushButton(" Refresh")
         self.refresh_btn.setIcon(_icon(self, QStyle.SP_BrowserReload))
         self.refresh_btn.setIconSize(QSize(16, 16))
@@ -56,27 +54,28 @@ class InvoiceListDialog(QDialog):
         search_layout.addWidget(self.refresh_btn)
         layout.addLayout(search_layout)
 
-        # Table
+        # ── Table (10 columns — added Receipt col) ────────────────────
         self.table = QTableWidget()
-        self.table.setColumnCount(9)
+        self.table.setColumnCount(10)
         self.table.setHorizontalHeaderLabels([
             "ID", "Invoice No", "Date", "Company",
-            "Service Type", "Title", "Amount", "Status", "Actions"
+            "Service Type", "Title", "Amount", "Status", "Paid Date", "Actions"
         ])
 
         hdr = self.table.horizontalHeader()
-        for col in [0, 1, 2, 4, 5, 6, 7, 8]:
+        for col in [0, 1, 2, 4, 5, 6, 7, 8, 9]:
             hdr.setSectionResizeMode(col, QHeaderView.Fixed)
         hdr.setSectionResizeMode(3, QHeaderView.Stretch)
 
-        self.table.setColumnWidth(0, 50)
-        self.table.setColumnWidth(1, 130)
-        self.table.setColumnWidth(2, 95)
-        self.table.setColumnWidth(4, 110)
-        self.table.setColumnWidth(5, 155)
-        self.table.setColumnWidth(6, 130)
-        self.table.setColumnWidth(7, 85)
-        self.table.setColumnWidth(8, 148)
+        self.table.setColumnWidth(0, 45)
+        self.table.setColumnWidth(1, 125)
+        self.table.setColumnWidth(2, 90)
+        self.table.setColumnWidth(4, 100)
+        self.table.setColumnWidth(5, 145)
+        self.table.setColumnWidth(6, 120)
+        self.table.setColumnWidth(7, 80)
+        self.table.setColumnWidth(8, 90)   # Paid Date
+        self.table.setColumnWidth(9, 185)  # Actions (4 buttons)
 
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -86,54 +85,78 @@ class InvoiceListDialog(QDialog):
         self.table.verticalHeader().setDefaultSectionSize(38)
         layout.addWidget(self.table)
 
-        # Bottom buttons
+        # ── Bottom buttons ────────────────────────────────────────────
         btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(10)
+        btn_layout.setSpacing(8)
 
-        # SP_DialogSaveButton — floppy/save icon, cross-platform
-        self.save_pdf_btn = QPushButton(" Save as PDF")
+        BTN_H = 40
+
+        # Invoice PDF
+        self.save_pdf_btn = QPushButton(" Invoice PDF")
         self.save_pdf_btn.setIcon(_icon(self, QStyle.SP_DialogSaveButton))
         self.save_pdf_btn.setIconSize(QSize(18, 18))
-        self.save_pdf_btn.setFixedHeight(40)
-        self.save_pdf_btn.setFixedWidth(155)
+        self.save_pdf_btn.setFixedHeight(BTN_H)
+        self.save_pdf_btn.setFixedWidth(145)
         self.save_pdf_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #10b981; color: white;
-                font-weight: bold; border: none; border-radius: 4px;
-            }
-            QPushButton:hover { background-color: #059669; }
+            QPushButton { background:#10b981; color:white; font-weight:bold;
+                          border:none; border-radius:4px; }
+            QPushButton:hover { background:#059669; }
         """)
         self.save_pdf_btn.clicked.connect(self.save_invoice_as_pdf)
         btn_layout.addWidget(self.save_pdf_btn)
 
-        # SP_FileDialogDetailedView — edit/detail icon, cross-platform
+        # Mark as Paid
+        self.mark_paid_btn = QPushButton(" Mark as Paid")
+        self.mark_paid_btn.setIcon(_icon(self, QStyle.SP_DialogApplyButton))
+        self.mark_paid_btn.setIconSize(QSize(18, 18))
+        self.mark_paid_btn.setFixedHeight(BTN_H)
+        self.mark_paid_btn.setFixedWidth(150)
+        self.mark_paid_btn.setStyleSheet("""
+            QPushButton { background:#2563eb; color:white; font-weight:bold;
+                          border:none; border-radius:4px; }
+            QPushButton:hover { background:#1d4ed8; }
+        """)
+        self.mark_paid_btn.clicked.connect(self.mark_selected_as_paid)
+        btn_layout.addWidget(self.mark_paid_btn)
+
+        # Receipt PDF
+        self.receipt_btn = QPushButton(" Receipt")
+        self.receipt_btn.setIcon(_icon(self, QStyle.SP_FileDialogContentsView))
+        self.receipt_btn.setIconSize(QSize(18, 18))
+        self.receipt_btn.setFixedHeight(BTN_H)
+        self.receipt_btn.setFixedWidth(120)
+        self.receipt_btn.setStyleSheet("""
+            QPushButton { background:#7c3aed; color:white; font-weight:bold;
+                          border:none; border-radius:4px; }
+            QPushButton:hover { background:#6d28d9; }
+        """)
+        self.receipt_btn.clicked.connect(self.save_receipt_pdf)
+        btn_layout.addWidget(self.receipt_btn)
+
+        # Edit
         self.edit_btn = QPushButton(" Edit")
         self.edit_btn.setIcon(_icon(self, QStyle.SP_FileDialogDetailedView))
         self.edit_btn.setIconSize(QSize(18, 18))
-        self.edit_btn.setFixedHeight(40)
-        self.edit_btn.setFixedWidth(110)
+        self.edit_btn.setFixedHeight(BTN_H)
+        self.edit_btn.setFixedWidth(100)
         self.edit_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f59e0b; color: white;
-                font-weight: bold; border: none; border-radius: 4px;
-            }
-            QPushButton:hover { background-color: #d97706; }
+            QPushButton { background:#f59e0b; color:white; font-weight:bold;
+                          border:none; border-radius:4px; }
+            QPushButton:hover { background:#d97706; }
         """)
         self.edit_btn.clicked.connect(self.edit_selected_invoice)
         btn_layout.addWidget(self.edit_btn)
 
-        # SP_TrashIcon — trash icon (Windows 10+ native, fallback on older)
+        # Delete
         self.delete_btn = QPushButton(" Delete")
-        self.delete_btn.setIcon(_icon(self, QStyle.SP_TrashIcon))
+        self.delete_btn.setIcon(_icon(self, QStyle.SP_DialogCloseButton))
         self.delete_btn.setIconSize(QSize(18, 18))
-        self.delete_btn.setFixedHeight(40)
-        self.delete_btn.setFixedWidth(110)
+        self.delete_btn.setFixedHeight(BTN_H)
+        self.delete_btn.setFixedWidth(100)
         self.delete_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #ef4444; color: white;
-                font-weight: bold; border: none; border-radius: 4px;
-            }
-            QPushButton:hover { background-color: #dc2626; }
+            QPushButton { background:#ef4444; color:white; font-weight:bold;
+                          border:none; border-radius:4px; }
+            QPushButton:hover { background:#dc2626; }
         """)
         self.delete_btn.clicked.connect(self.delete_selected_invoice)
         btn_layout.addWidget(self.delete_btn)
@@ -141,13 +164,15 @@ class InvoiceListDialog(QDialog):
         btn_layout.addStretch()
 
         self.close_btn = QPushButton("Close")
-        self.close_btn.setFixedHeight(40)
-        self.close_btn.setFixedWidth(100)
+        self.close_btn.setFixedHeight(BTN_H)
+        self.close_btn.setFixedWidth(90)
         self.close_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.close_btn)
 
         layout.addLayout(btn_layout)
         self.load_invoices()
+
+    # ── Data ──────────────────────────────────────────────────────────
 
     def load_invoices(self):
         try:
@@ -155,37 +180,56 @@ class InvoiceListDialog(QDialog):
             conn = get_db()
             rows = conn.execute("""
                 SELECT i.id, i.invoice_no, i.invoice_date, i.company_name,
-                       i.service_type, i.inv_title, i.grand_total, i.status
+                       i.service_type, i.inv_title, i.grand_total, i.status,
+                       i.paid_date
                 FROM invoices i ORDER BY i.id DESC
             """).fetchall()
             for row in rows:
                 self.add_invoice_row(row)
             conn.close()
         except Exception as e:
-            QMessageBox.warning(self, "Error", f"Failed to load invoices:\n{str(e)}")
+            # paid_date column မရှိသေးရင် fallback
+            try:
+                conn = get_db()
+                rows = conn.execute("""
+                    SELECT i.id, i.invoice_no, i.invoice_date, i.company_name,
+                           i.service_type, i.inv_title, i.grand_total, i.status,
+                           NULL as paid_date
+                    FROM invoices i ORDER BY i.id DESC
+                """).fetchall()
+                for row in rows:
+                    self.add_invoice_row(row)
+                conn.close()
+            except Exception as e2:
+                QMessageBox.warning(self, "Error", f"Failed to load:\n{str(e2)}")
 
     def add_invoice_row(self, row_data):
         rp = self.table.rowCount()
         self.table.insertRow(rp)
 
+        # ID
         id_item = QTableWidgetItem(str(row_data[0]))
         id_item.setData(Qt.UserRole, row_data[0])
         self.table.setItem(rp, 0, id_item)
 
+        # Invoice No
         no_item = QTableWidgetItem(row_data[1] or "")
         no_item.setData(Qt.UserRole, row_data[1])
         self.table.setItem(rp, 1, no_item)
 
+        # Date / Company / Service / Title
         for col, val in enumerate([row_data[2], row_data[3],
                                     row_data[4] or "N/A", row_data[5] or ""], 2):
             self.table.setItem(rp, col, QTableWidgetItem(val or ""))
 
+        # Amount
         amount = float(row_data[6]) if row_data[6] else 0
         amt = QTableWidgetItem(f"{amount:,.0f} MMK")
         amt.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
         amt.setData(Qt.UserRole, amount)
         self.table.setItem(rp, 6, amt)
 
+        # Status
         status = row_data[7] or "Pending"
         st = QTableWidgetItem(status)
         if status.lower() == "paid":
@@ -199,52 +243,87 @@ class InvoiceListDialog(QDialog):
             st.setBackground(QColor(219, 234, 254))
         self.table.setItem(rp, 7, st)
 
-        # Action buttons — QStyle icons (OS native, font-independent)
+        # Paid Date (col 8)
+        paid_date = row_data[8] if len(row_data) > 8 else None
+        pd_item = QTableWidgetItem(paid_date or "")
+        if paid_date:
+            pd_item.setForeground(QColor(22, 163, 74))
+        self.table.setItem(rp, 8, pd_item)
+
+        # ── Action buttons (col 9) ────────────────────────────────────
         w = QWidget()
         hl = QHBoxLayout(w)
-        hl.setContentsMargins(3, 3, 3, 3)
-        hl.setSpacing(3)
+        hl.setContentsMargins(2, 2, 2, 2)
+        hl.setSpacing(2)
 
-        BTN = QSize(40, 30)
-        ICO = QSize(15, 15)
+        ICO = QSize(14, 14)
 
+        # Invoice PDF — green
         b_pdf = QPushButton()
         b_pdf.setIcon(_icon(self, QStyle.SP_DialogSaveButton))
         b_pdf.setIconSize(ICO)
-        b_pdf.setFixedSize(BTN)
-        b_pdf.setToolTip("Save as PDF")
-        b_pdf.setStyleSheet(
-            "QPushButton{background:#10b981;border:none;border-radius:4px;}"
-            "QPushButton:hover{background:#059669;}"
-        )
+        b_pdf.setFixedSize(40, 30)
+        b_pdf.setToolTip("Save Invoice as PDF")
+        b_pdf.setStyleSheet("QPushButton{background:#10b981;border:none;border-radius:4px;}"
+                            "QPushButton:hover{background:#059669;}")
         b_pdf.clicked.connect(lambda _, r=rp: self.save_invoice_pdf_at_row(r))
         hl.addWidget(b_pdf)
 
+        # Mark as Paid — blue (Pending ဆိုရင်သာ active)
+        b_paid = QPushButton()
+        b_paid.setIcon(_icon(self, QStyle.SP_DialogApplyButton))
+        b_paid.setIconSize(ICO)
+        b_paid.setFixedSize(40, 30)
+        b_paid.setToolTip("Mark as Paid")
+        if status.lower() == "paid":
+            b_paid.setStyleSheet("QPushButton{background:#94a3b8;border:none;border-radius:4px;}")
+            b_paid.setEnabled(False)
+        else:
+            b_paid.setStyleSheet("QPushButton{background:#2563eb;border:none;border-radius:4px;}"
+                                 "QPushButton:hover{background:#1d4ed8;}")
+        b_paid.clicked.connect(lambda _, r=rp: self.mark_paid_at_row(r))
+        hl.addWidget(b_paid)
+
+        # Receipt PDF — purple (Paid ဆိုရင်သာ active)
+        b_rcpt = QPushButton()
+        b_rcpt.setIcon(_icon(self, QStyle.SP_FileDialogContentsView))
+        b_rcpt.setIconSize(ICO)
+        b_rcpt.setFixedSize(40, 30)
+        b_rcpt.setToolTip("Save Receipt PDF")
+        if status.lower() == "paid":
+            b_rcpt.setStyleSheet("QPushButton{background:#7c3aed;border:none;border-radius:4px;}"
+                                 "QPushButton:hover{background:#6d28d9;}")
+        else:
+            b_rcpt.setStyleSheet("QPushButton{background:#94a3b8;border:none;border-radius:4px;}")
+            b_rcpt.setEnabled(False)
+        b_rcpt.clicked.connect(lambda _, r=rp: self.save_receipt_pdf_at_row(r))
+        hl.addWidget(b_rcpt)
+
+        # Edit — amber
         b_edit = QPushButton()
         b_edit.setIcon(_icon(self, QStyle.SP_FileDialogDetailedView))
         b_edit.setIconSize(ICO)
-        b_edit.setFixedSize(BTN)
+        b_edit.setFixedSize(36, 30)
         b_edit.setToolTip("Edit Invoice")
-        b_edit.setStyleSheet(
-            "QPushButton{background:#f59e0b;border:none;border-radius:4px;}"
-            "QPushButton:hover{background:#d97706;}"
-        )
+        b_edit.setStyleSheet("QPushButton{background:#f59e0b;border:none;border-radius:4px;}"
+                             "QPushButton:hover{background:#d97706;}")
         b_edit.clicked.connect(lambda _, r=rp: self.edit_invoice_at_row(r))
         hl.addWidget(b_edit)
 
+        # Delete — red
         b_del = QPushButton()
-        b_del.setIcon(_icon(self, QStyle.SP_TrashIcon))
+        b_del.setIcon(_icon(self, QStyle.SP_DialogCloseButton))
         b_del.setIconSize(ICO)
-        b_del.setFixedSize(BTN)
+        b_del.setFixedSize(36, 30)
         b_del.setToolTip("Delete Invoice")
-        b_del.setStyleSheet(
-            "QPushButton{background:#ef4444;border:none;border-radius:4px;}"
-            "QPushButton:hover{background:#dc2626;}"
-        )
+        b_del.setStyleSheet("QPushButton{background:#ef4444;border:none;border-radius:4px;}"
+                            "QPushButton:hover{background:#dc2626;}")
         b_del.clicked.connect(lambda _, r=rp: self.delete_invoice_at_row(r))
         hl.addWidget(b_del)
 
-        self.table.setCellWidget(rp, 8, w)
+        self.table.setCellWidget(rp, 9, w)
+
+    # ── Filter ────────────────────────────────────────────────────────
 
     def filter_invoices(self):
         txt = self.search_input.text().lower()
@@ -254,6 +333,64 @@ class InvoiceListDialog(QDialog):
                 for c in [1, 2, 3, 4, 5]
             )
             self.table.setRowHidden(row, not show)
+
+    # ── Mark as Paid ──────────────────────────────────────────────────
+
+    def mark_selected_as_paid(self):
+        row = self.table.currentRow()
+        if row >= 0:
+            self.mark_paid_at_row(row)
+        else:
+            QMessageBox.information(self, "Info", "Please select a Pending invoice first.")
+
+    def mark_paid_at_row(self, row):
+        id_i = self.table.item(row, 0)
+        no_i = self.table.item(row, 1)
+        st_i = self.table.item(row, 7)
+        if not id_i:
+            return
+
+        invoice_id = int(id_i.text())
+        invoice_no = no_i.text() if no_i else ""
+        current_status = st_i.text() if st_i else ""
+
+        if current_status.lower() == "paid":
+            QMessageBox.information(self, "Info",
+                                    f"Invoice {invoice_no} is already Paid.")
+            return
+
+        # ငွေပေးချေသည့်ရက်စွဲ ရိုက်ထည့်ခိုင်းမယ်
+        today = QDate.currentDate().toString("yyyy-MM-dd")
+        paid_date, ok = QInputDialog.getText(
+            self,
+            "Mark as Paid",
+            f"Invoice: {invoice_no}\n\nPayment received date (yyyy-MM-dd):",
+            text=today
+        )
+        if not ok or not paid_date.strip():
+            return
+
+        paid_date = paid_date.strip()
+
+        try:
+            conn = get_db()
+            conn.execute(
+                "UPDATE invoices SET status=?, paid_date=? WHERE id=?",
+                ("Paid", paid_date, invoice_id)
+            )
+            conn.commit()
+            conn.close()
+
+            # Table ကို လက်ငင်း update
+            self.load_invoices()
+            QMessageBox.information(
+                self, "Success",
+                f"Invoice {invoice_no} marked as Paid!\nPayment date: {paid_date}"
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to update status:\n{str(e)}")
+
+    # ── Invoice PDF ───────────────────────────────────────────────────
 
     def save_invoice_as_pdf(self):
         row = self.table.currentRow()
@@ -281,10 +418,53 @@ class InvoiceListDialog(QDialog):
                     path += ".pdf"
                 from .pdf_generator import InvoicePDFGenerator
                 InvoicePDFGenerator(path).create_invoice(data)
-                QMessageBox.information(self, "Success", f"PDF saved!\n\n{path}")
+                QMessageBox.information(self, "Success", f"Invoice PDF saved!\n\n{path}")
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to save PDF:\n{str(e)}")
+            QMessageBox.critical(self, "Error", f"Failed:\n{str(e)}")
             import traceback; traceback.print_exc()
+
+    # ── Receipt PDF ───────────────────────────────────────────────────
+
+    def save_receipt_pdf(self):
+        row = self.table.currentRow()
+        if row >= 0:
+            st_i = self.table.item(row, 7)
+            if st_i and st_i.text().lower() == "paid":
+                self.save_receipt_pdf_at_row(row)
+            else:
+                QMessageBox.information(
+                    self, "Info",
+                    "Please select a Paid invoice to generate receipt.\n"
+                    "Mark the invoice as Paid first."
+                )
+        else:
+            QMessageBox.information(self, "Info", "Please select an invoice first.")
+
+    def save_receipt_pdf_at_row(self, row):
+        try:
+            id_i = self.table.item(row, 0)
+            no_i = self.table.item(row, 1)
+            if not id_i or not no_i:
+                return
+            data = self.get_invoice_data_for_pdf(int(id_i.text()))
+            if not data:
+                QMessageBox.warning(self, "Error", "Could not load invoice data.")
+                return
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Save Receipt PDF",
+                f"receipt_{no_i.text()}.pdf", "PDF Files (*.pdf)"
+            )
+            if path:
+                if not path.lower().endswith(".pdf"):
+                    path += ".pdf"
+                from .pdf_generator import InvoicePDFGenerator
+                InvoicePDFGenerator(path).create_receipt(data)
+                QMessageBox.information(self, "Success", f"Receipt PDF saved!\n\n{path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed:\n{str(e)}")
+            import traceback; traceback.print_exc()
+
+    # ── Get invoice data ──────────────────────────────────────────────
 
     def get_invoice_data_for_pdf(self, invoice_id):
         try:
@@ -317,6 +497,12 @@ class InvoiceListDialog(QDialog):
             from .pdf_generator import number_to_words_mm
             grand_total = inv['grand_total'] or 0
 
+            # paid_date — column မရှိသေးရင် safe ယူမယ်
+            try:
+                paid_date = inv['paid_date'] or ""
+            except Exception:
+                paid_date = ""
+
             return {
                 'mother_company': {
                     'name': inv['mother_name'] or '',
@@ -332,9 +518,7 @@ class InvoiceListDialog(QDialog):
                 'client': {
                     'company_name': inv['company_name'] or '',
                     'address': inv['address'] or '',
-                    # toggle မနှိပ်ဘဲ save ထားရင် contact_name = NULL → pdf မှာ "Valued Client"
-                    # toggle နှိပ်ပြီး save ထားရင် contact_name = value → pdf မှာ ထိုတန်ဖိုး
-                    # c1_name fallback မသုံးရ — toggle မနှိပ်ဘဲ c1_name ပါလာမှာ
+                    # toggle မနှိပ်ဘဲ save = NULL → "Valued Client"
                     'contact_name':  inv['contact_name'] or None,
                     'contact_pos':   inv['contact_pos']  or None,
                     'contact_ph':    inv['contact_ph']   or None,
@@ -349,6 +533,8 @@ class InvoiceListDialog(QDialog):
                     'date': inv['invoice_date'] or '',
                     'service_type': inv['service_type'] or '',
                     'inv_title': inv['inv_title'] or '',
+                    'status': inv['status'] or 'Pending',
+                    'paid_date': paid_date,
                 },
                 'payment': {
                     'bank_name': inv['mother_bank_name'] or '',
@@ -378,6 +564,8 @@ class InvoiceListDialog(QDialog):
             import traceback; traceback.print_exc()
             return None
 
+    # ── Edit ──────────────────────────────────────────────────────────
+
     def edit_selected_invoice(self):
         row = self.table.currentRow()
         if row >= 0:
@@ -396,7 +584,9 @@ class InvoiceListDialog(QDialog):
                 self.load_invoices()
                 QMessageBox.information(self, "Success", "Invoice updated!")
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to edit:\n{str(e)}")
+            QMessageBox.critical(self, "Error", f"Failed:\n{str(e)}")
+
+    # ── Delete ────────────────────────────────────────────────────────
 
     def delete_selected_invoice(self):
         row = self.table.currentRow()
@@ -427,7 +617,6 @@ class InvoiceListDialog(QDialog):
                 conn.commit()
                 conn.close()
                 self.table.removeRow(row)
-                QMessageBox.information(self, "Success",
-                                        f"Invoice {invoice_no} deleted!")
+                QMessageBox.information(self, "Success", f"Invoice {invoice_no} deleted!")
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to delete:\n{str(e)}")
+                QMessageBox.critical(self, "Error", f"Failed:\n{str(e)}")
