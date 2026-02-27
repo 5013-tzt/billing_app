@@ -291,59 +291,105 @@ class InvoicePDFGenerator:
                 pass
 
     def draw_payment_footer(self, canv, invoice_data):
-        """Payment details ကို page အောက်ဆုံးမှာ canvas ဖြင့်ဆွဲမယ်"""
+        """
+        Footer layout (ပုံပြထားတဲ့ design အတိုင်း):
+
+        ─────────────────────────────────────────────────────────
+        PAYMENT DETAILS:                          Thank You!
+        Beneficiary: COMPANY NAME CO              Computer Generated Document
+        KBZ Bank: 1234567890  |  KPay: 09xxxxxxx
+        ─────────────────────────────────────────────────────────
+        """
         payment = invoice_data.get('payment', {})
+        mother  = invoice_data.get('mother_company', {})
+
         has_payment = any([
             payment.get('bank_name'), payment.get('beneficiary'),
             payment.get('account_no'), payment.get('kpay_no'),
         ])
-        if not has_payment:
-            return
 
         canv.saveState()
 
+        page_w   = A4[0]
         left_x   = 12 * mm
-        right_x  = A4[0] - 12 * mm
+        right_x  = page_w - 12 * mm
         usable_w = right_x - left_x
-        footer_h = 18 * mm
-        bottom_y = 6 * mm
+        footer_h = 22 * mm      # ပိုနေရာပေးမယ်
+        bottom_y = 5 * mm
         line_y   = bottom_y + footer_h
 
-        # separator line
-        canv.setStrokeColor(colors.lightgrey)
-        canv.setLineWidth(0.4)
+        # ── Top separator line ─────────────────────────────────────────
+        canv.setStrokeColor(colors.HexColor('#CCCCCC'))
+        canv.setLineWidth(0.5)
         canv.line(left_x, line_y, right_x, line_y)
 
-        # "PAYMENT DETAILS:" label
-        label_y = line_y - 4 * mm
-        canv.setFont('Helvetica-Bold', 7)
-        canv.setFillColor(colors.grey)
-        canv.drawString(left_x, label_y, "PAYMENT DETAILS:")
+        # ── Right side: "Thank You!" + subtitle ───────────────────────
+        thank_x = right_x
+        thank_y = line_y - 5 * mm
 
-        # Row 1: Bank | Beneficiary
-        row1_parts = []
-        if payment.get('bank_name'):
-            row1_parts.append(f"Bank: {payment['bank_name']}")
-        if payment.get('beneficiary'):
-            row1_parts.append(f"Beneficiary: {payment['beneficiary']}")
-
-        # Row 2: Account No | KPay
-        row2_parts = []
-        if payment.get('account_no'):
-            row2_parts.append(f"Account No: {payment['account_no']}")
-        if payment.get('kpay_no'):
-            row2_parts.append(f"KPay: {payment['kpay_no']}")
-
-        col_w  = usable_w / 2
-        row1_y = label_y - 4 * mm
-        row2_y = row1_y  - 4 * mm
+        canv.setFont('Helvetica-Bold', 11)
+        canv.setFillColor(colors.HexColor('#1A1A1A'))
+        canv.drawRightString(thank_x, thank_y, "Thank You!")
 
         canv.setFont('Helvetica', 7.5)
-        canv.setFillColor(colors.black)
-        for i, text in enumerate(row1_parts):
-            canv.drawString(left_x + i * col_w, row1_y, text)
-        for i, text in enumerate(row2_parts):
-            canv.drawString(left_x + i * col_w, row2_y, text)
+        canv.setFillColor(colors.HexColor('#888888'))
+        canv.drawRightString(thank_x, thank_y - 5 * mm, "Computer Generated Document")
+
+        if not has_payment:
+            canv.restoreState()
+            return
+
+        # ── Left side: PAYMENT DETAILS ────────────────────────────────
+        cur_y = line_y - 4.5 * mm
+
+        # "PAYMENT DETAILS:" label — gray small caps style
+        canv.setFont('Helvetica-Bold', 7)
+        canv.setFillColor(colors.HexColor('#888888'))
+        canv.drawString(left_x, cur_y, "PAYMENT DETAILS:")
+        cur_y -= 4.5 * mm
+
+        # Beneficiary line
+        if payment.get('beneficiary'):
+            canv.setFont('Helvetica', 8)
+            canv.setFillColor(colors.HexColor('#444444'))
+            canv.drawString(left_x, cur_y, "Beneficiary: ")
+            bene_x = left_x + canv.stringWidth("Beneficiary: ", 'Helvetica', 8)
+            canv.setFont('Helvetica-Bold', 8)
+            canv.setFillColor(colors.HexColor('#1A1A1A'))
+            canv.drawString(bene_x, cur_y, payment['beneficiary'].upper())
+            cur_y -= 4.5 * mm
+
+        # Bank | KPay row  e.g.  KBZ Bank: 2750xxx  |  KPay: 09 447 902 411
+        bank_parts = []
+        if payment.get('bank_name') and payment.get('account_no'):
+            bank_parts.append(
+                (payment['bank_name'] + ": ", payment['account_no'])
+            )
+        elif payment.get('account_no'):
+            bank_parts.append(("Account No: ", payment['account_no']))
+
+        if payment.get('kpay_no'):
+            bank_parts.append(("KPay: ", payment['kpay_no']))
+
+        if bank_parts:
+            cur_x = left_x
+            for idx, (label, value) in enumerate(bank_parts):
+                # separator pipe between items
+                if idx > 0:
+                    canv.setFont('Helvetica', 8)
+                    canv.setFillColor(colors.HexColor('#AAAAAA'))
+                    canv.drawString(cur_x, cur_y, "  |  ")
+                    cur_x += canv.stringWidth("  |  ", 'Helvetica', 8)
+
+                canv.setFont('Helvetica', 8)
+                canv.setFillColor(colors.HexColor('#444444'))
+                canv.drawString(cur_x, cur_y, label)
+                cur_x += canv.stringWidth(label, 'Helvetica', 8)
+
+                canv.setFont('Helvetica-Bold', 8)
+                canv.setFillColor(colors.HexColor('#1A1A1A'))
+                canv.drawString(cur_x, cur_y, value)
+                cur_x += canv.stringWidth(value, 'Helvetica-Bold', 8)
 
         canv.restoreState()
 
@@ -355,7 +401,7 @@ class InvoicePDFGenerator:
             rightMargin=12*mm,
             leftMargin=12*mm,
             topMargin=8*mm,
-            bottomMargin=28*mm        # footer နေရာအတွက် ချန်
+            bottomMargin=32*mm        # footer နေရာအတွက် ချန်
         )
 
         def on_page(canv, doc):

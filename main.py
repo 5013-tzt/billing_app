@@ -186,8 +186,8 @@ class MainWindow(QMainWindow):
         sidebar.setFixedWidth(220)
         sidebar.setStyleSheet("""
             QFrame#Sidebar {
-                background-color: #F5F5F5;
-                border-right: 1px solid #DDDDDD;
+                background-color: palette(window);
+                border-right: 1px solid palette(mid);
             }
         """)
         
@@ -231,7 +231,6 @@ class MainWindow(QMainWindow):
                     border: none;
                     border-radius: 0px;
                     background-color: transparent;
-                    color: #374151;
                 }
                 QPushButton#NavBtn:hover {
                     background-color: #e0e7ff;
@@ -239,7 +238,6 @@ class MainWindow(QMainWindow):
                 }
                 QPushButton#NavBtn:pressed {
                     background-color: #c7d2fe;
-                    color: #2563EB;
                 }
             """)
             btn.clicked.connect(func)
@@ -327,14 +325,8 @@ class MainWindow(QMainWindow):
     def open_settings(self):
         """Open settings dialog"""
         dialog = SettingsDialog(self)
-        if dialog.exec() == QDialog.Accepted:
-            # If theme changed, prompt for restart
-            QMessageBox.information(
-                self,
-                "✅ Settings Saved",
-                "Settings saved successfully!\n\n"
-                "If you changed the theme, please restart the application."
-            )
+        dialog.exec()
+        self.dashboard_page.load_dashboard_data()
     
     def logout(self):
         """Handle logout"""
@@ -365,8 +357,7 @@ def main():
     # ══════════════════════════════════════════════════════════════
     # Force Light Mode (Override OS dark mode if needed)
     # ══════════════════════════════════════════════════════════════
-    # Always force light palette regardless of stored theme preference
-    if True:
+    if theme_name == 'light':
         light_palette = QPalette()
         light_palette.setColor(QPalette.Window,          QColor(255, 255, 255))
         light_palette.setColor(QPalette.WindowText,      QColor(26,  26,  26))

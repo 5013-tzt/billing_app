@@ -133,11 +133,16 @@ class SettingsDialog(QDialog):
         self.m_email.setPlaceholderText("info@company.com")
         contact_grid.addWidget(self.m_email, 1, 1)
 
-        contact_grid.addWidget(QLabel("Address:"), 2, 0)
+        contact_grid.addWidget(QLabel("Website:"), 2, 0)
+        self.m_website = QLineEdit()
+        self.m_website.setPlaceholderText("www.company.com")
+        contact_grid.addWidget(self.m_website, 2, 1)
+
+        contact_grid.addWidget(QLabel("Address:"), 3, 0)
         self.m_addr = QTextEdit()
         self.m_addr.setPlaceholderText("Full address")
         self.m_addr.setMaximumHeight(80)
-        contact_grid.addWidget(self.m_addr, 2, 1)
+        contact_grid.addWidget(self.m_addr, 3, 1)
 
         scroll_layout.addWidget(contact_group)
 
@@ -266,11 +271,13 @@ class SettingsDialog(QDialog):
             conn.close()
 
             if company:
+                company = dict(company)   # sqlite3.Row → dict ပြောင်းမယ်
                 self.current_company_id = company['id']
                 self.m_name.setText(company['name'] or "")
                 self.m_code.setText(company['code'] or "")
                 self.m_phone.setText(company['phone'] or "")
                 self.m_email.setText(company['email'] or "")
+                self.m_website.setText(company.get('website') or "")
                 self.m_addr.setText(company['address'] or "")
                 self.m_tax.setText(company['tax_number'] or "")
                 self.m_bank.setText(company['bank_name'] or "")
@@ -336,7 +343,7 @@ class SettingsDialog(QDialog):
                     UPDATE companies SET
                         name=?, code=?, phone=?, email=?, address=?,
                         tax_number=?, logo=?, is_default=?,
-                        bank_name=?, beneficiary=?, account_no=?, kpay_no=?
+                        bank_name=?, beneficiary=?, account_no=?, kpay_no=?, website=?
                     WHERE id=?
                 ''', (
                     self.m_name.text().strip(),
@@ -351,14 +358,15 @@ class SettingsDialog(QDialog):
                     self.m_beneficiary.text().strip(),
                     self.m_account_no.text().strip(),
                     self.m_kpay.text().strip(),
+                    self.m_website.text().strip(),
                     self.current_company_id
                 ))
             else:
                 conn.execute('''
                     INSERT INTO companies (
                         name, code, phone, email, address, tax_number, logo, is_default,
-                        bank_name, beneficiary, account_no, kpay_no
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                        bank_name, beneficiary, account_no, kpay_no, website
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ''', (
                     self.m_name.text().strip(),
                     self.m_code.text().strip(),
@@ -372,6 +380,7 @@ class SettingsDialog(QDialog):
                     self.m_beneficiary.text().strip(),
                     self.m_account_no.text().strip(),
                     self.m_kpay.text().strip(),
+                    self.m_website.text().strip(),
                 ))
 
             if self.m_default.isChecked():

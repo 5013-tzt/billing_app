@@ -60,6 +60,7 @@ def init_db():
         'beneficiary': "ALTER TABLE companies ADD COLUMN beneficiary TEXT DEFAULT ''",
         'account_no':  "ALTER TABLE companies ADD COLUMN account_no  TEXT DEFAULT ''",
         'kpay_no':     "ALTER TABLE companies ADD COLUMN kpay_no     TEXT DEFAULT ''",
+        'website':     "ALTER TABLE companies ADD COLUMN website     TEXT DEFAULT ''",
     }
     for col, sql in payment_cols.items():
         if col not in company_cols:
