@@ -42,7 +42,7 @@ class ClientDialog(QDialog):
         title_label.setStyleSheet("""
             font-size: 16px; 
             font-weight: bold; 
-            color: #2c3e50;
+            color: #1A1A1A;
         """)
         header_row.addWidget(title_label)
         header_row.addStretch()
@@ -86,11 +86,11 @@ class ClientDialog(QDialog):
                 gridline-color: #e0e0e0;
                 border: 1px solid #e0e0e0;
                 border-radius: 4px;
-                color: #2c3e50;
+                color: #1A1A1A;
             }
             QTableWidget::item {
                 padding: 5px;
-                color: #2c3e50;
+                color: #1A1A1A;
             }
             QTableWidget::item:selected {
                 background-color: #3498db;
@@ -98,7 +98,7 @@ class ClientDialog(QDialog):
             }
             QHeaderView::section {
                 background-color: #ecf0f1;
-                color: #2c3e50;
+                color: #1A1A1A;
                 padding: 8px;
                 border: none;
                 border-bottom: 2px solid #3498db;
@@ -142,7 +142,7 @@ class ClientDialog(QDialog):
                 padding: 15px;
             }
             QLabel {
-                color: #2c3e50;
+                color: #1A1A1A;
                 font-size: 13px;
                 font-weight: bold;
             }
@@ -161,7 +161,7 @@ class ClientDialog(QDialog):
                 border-radius: 5px;
                 padding: 8px;
                 background-color: white;
-                color: #2c3e50;
+                color: #1A1A1A;
                 font-size: 13px;
             }
             QLineEdit:focus {
@@ -182,7 +182,7 @@ class ClientDialog(QDialog):
                 border-radius: 5px;
                 padding: 8px;
                 background-color: white;
-                color: #2c3e50;
+                color: #1A1A1A;
                 font-size: 13px;
             }
             QLineEdit:focus {
@@ -205,7 +205,7 @@ class ClientDialog(QDialog):
                 padding: 15px;
             }
             QLabel {
-                color: #2c3e50;
+                color: #1A1A1A;
                 font-size: 13px;
                 font-weight: bold;
             }
@@ -215,7 +215,7 @@ class ClientDialog(QDialog):
 
         addr_header = QHBoxLayout()
         addr_label = QLabel("📍 Addresses (3 locations)")
-        addr_label.setStyleSheet("font-size: 14px; color: #2c3e50; font-weight: bold;")
+        addr_label.setStyleSheet("font-size: 14px; color: #1A1A1A; font-weight: bold;")
         addr_header.addWidget(addr_label)
         addr_header.addStretch()
         addr_layout.addLayout(addr_header)
@@ -235,7 +235,7 @@ class ClientDialog(QDialog):
                     border-radius: 5px;
                     padding: 8px;
                     background-color: white;
-                    color: #2c3e50;
+                    color: #1A1A1A;
                     font-size: 13px;
                 }
                 QTextEdit:focus {
@@ -260,7 +260,7 @@ class ClientDialog(QDialog):
                 padding: 15px;
             }
             QLabel {
-                color: #2c3e50;
+                color: #1A1A1A;
                 font-size: 13px;
             }
         """)
@@ -269,7 +269,7 @@ class ClientDialog(QDialog):
 
         contact_header = QHBoxLayout()
         contact_label = QLabel("📞 Contacts:")
-        contact_label.setStyleSheet("font-size: 14px; color: #2c3e50; font-weight: bold;")
+        contact_label.setStyleSheet("font-size: 14px; color: #1A1A1A; font-weight: bold;")
         contact_header.addWidget(contact_label)
         contact_header.addStretch()
         contact_layout.addLayout(contact_header)
@@ -281,9 +281,9 @@ class ClientDialog(QDialog):
         for col, text in enumerate(["", "Person 1", "Person 2", "Person 3"]):
             lbl = QLabel(text)
             if col > 0:
-                lbl.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
+                lbl.setStyleSheet("font-weight: bold; color: #1A1A1A; font-size: 13px;")
             else:
-                lbl.setStyleSheet("color: #2c3e50; font-size: 13px;")
+                lbl.setStyleSheet("color: #1A1A1A; font-size: 13px;")
             contact_grid.addWidget(lbl, 0, col)
 
         self.contacts = []
@@ -292,7 +292,7 @@ class ClientDialog(QDialog):
 
         for row, (field, key) in enumerate(zip(field_labels, field_keys)):
             row_label = QLabel(field + ":")
-            row_label.setStyleSheet("color: #2c3e50; font-weight: bold; font-size: 13px;")
+            row_label.setStyleSheet("color: #1A1A1A; font-weight: bold; font-size: 13px;")
             contact_grid.addWidget(row_label, row + 1, 0)
 
             for col in range(3):
@@ -307,7 +307,7 @@ class ClientDialog(QDialog):
                         border-radius: 4px;
                         padding: 6px;
                         background-color: white;
-                        color: #2c3e50;
+                        color: #1A1A1A;
                         font-size: 13px;
                     }
                     QLineEdit:focus {

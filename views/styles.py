@@ -219,6 +219,40 @@ def _build_stylesheet(c):
     }}
     QMenu::item {{ padding: 8px 25px; }}
     QMenu::item:selected {{ background-color: {c['accent']}; color: white; }}
+    QWidget {{
+        background-color: {c['bg_primary']};
+        color: {c['text_primary']};
+    }}
+    QCalendarWidget QWidget {{
+        background-color: {c['bg_primary']};
+        color: {c['text_primary']};
+    }}
+    QCalendarWidget QAbstractItemView {{
+        background-color: {c['bg_primary']};
+        color: {c['text_primary']};
+        selection-background-color: {c['accent']};
+        selection-color: white;
+    }}
+    QCalendarWidget QToolButton {{
+        background-color: {c['bg_button']};
+        color: {c['text_primary']};
+    }}
+    QCalendarWidget QMenu {{
+        background-color: {c['bg_primary']};
+        color: {c['text_primary']};
+    }}
+    QSpinBox, QDoubleSpinBox {{
+        background-color: {c['bg_input']};
+        color: {c['text_primary']};
+        border: 1px solid {c['border']};
+        border-radius: 4px;
+        padding: 4px;
+    }}
+    QDateEdit::drop-down {{ border: none; width: 24px; }}
+    QDateEdit QAbstractItemView {{
+        background-color: {c['bg_primary']};
+        color: {c['text_primary']};
+    }}
     """
 
 

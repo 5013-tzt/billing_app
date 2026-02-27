@@ -186,8 +186,8 @@ class MainWindow(QMainWindow):
         sidebar.setFixedWidth(220)
         sidebar.setStyleSheet("""
             QFrame#Sidebar {
-                background-color: palette(window);
-                border-right: 1px solid palette(mid);
+                background-color: #F5F5F5;
+                border-right: 1px solid #DDDDDD;
             }
         """)
         
@@ -231,6 +231,7 @@ class MainWindow(QMainWindow):
                     border: none;
                     border-radius: 0px;
                     background-color: transparent;
+                    color: #374151;
                 }
                 QPushButton#NavBtn:hover {
                     background-color: #e0e7ff;
@@ -238,6 +239,7 @@ class MainWindow(QMainWindow):
                 }
                 QPushButton#NavBtn:pressed {
                     background-color: #c7d2fe;
+                    color: #2563EB;
                 }
             """)
             btn.clicked.connect(func)
@@ -363,7 +365,8 @@ def main():
     # ══════════════════════════════════════════════════════════════
     # Force Light Mode (Override OS dark mode if needed)
     # ══════════════════════════════════════════════════════════════
-    if theme_name == 'light':
+    # Always force light palette regardless of stored theme preference
+    if True:
         light_palette = QPalette()
         light_palette.setColor(QPalette.Window,          QColor(255, 255, 255))
         light_palette.setColor(QPalette.WindowText,      QColor(26,  26,  26))
