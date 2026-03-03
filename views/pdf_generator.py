@@ -652,7 +652,7 @@ class InvoicePDFGenerator:
 # Number → English Words (MMK)
 # ============================================================
     def create_receipt(self, invoice_data):
-        """Payment Receipt PDF ဆောက်လုပ်ခြင်း — Paid invoice များအတွက်"""
+        """Payment Receipt PDF — Clean black/white design"""
         self.elements = []
         page_width = A4[0] - 24*mm
 
@@ -662,175 +662,211 @@ class InvoicePDFGenerator:
         totals  = invoice_data.get('totals', {})
         payment = invoice_data.get('payment', {})
 
-        # ── Header ────────────────────────────────────────────────────
-        self.elements.append(Paragraph("RECEIPT", self.styles['InvoiceTitle']))
-        self.elements.append(Spacer(1, 2*mm))
+        grand_total  = totals.get('grand_total', 0)
+        subtotal     = totals.get('subtotal', 0)
+        tax          = totals.get('tax', 0)
+        advance      = totals.get('advance', 0)
+        amount_words = totals.get('amount_in_words', '')
+        if not amount_words:
+            amount_words = number_to_words_mm(int(grand_total))
 
+        # paid_date format normalize: "2026-03-03" → "03 Mar 2026"
+        _raw_paid = inv.get('paid_date') or datetime.now().strftime('%Y-%m-%d')
+        try:
+            paid_date = datetime.strptime(_raw_paid, '%Y-%m-%d').strftime('%d %b %Y')
+        except Exception:
+            paid_date = _raw_paid
+
+        # ── shared local styles ───────────────────────────────────────
+        def _s(name, **kw):
+            return ParagraphStyle(name, **kw)
+
+        # ── SECTION 1: Header — RECEIPT big + company name ───────────
+        self.elements.append(Paragraph("RECEIPT", self.styles['InvoiceTitle']))
+        self.elements.append(Spacer(1, 1*mm))
+
+        # Company name bold under title
         if mother.get('name'):
             self.elements.append(Paragraph(mother['name'], self.styles['MotherName']))
+
+        # Hotline line
+        hotline_parts = []
         if mother.get('phone'):
-            self.elements.append(Paragraph(f"Hotline: {mother['phone']}", self.styles['Hotline']))
+            hotline_parts.append(f"Hotline: {mother['phone']}")
         if mother.get('email'):
-            self.elements.append(Paragraph(mother['email'], self.styles['Hotline']))
+            hotline_parts.append(mother['email'])
+        if hotline_parts:
+            self.elements.append(Paragraph("  |  ".join(hotline_parts), self.styles['Hotline']))
 
         self.elements.append(Spacer(1, 2*mm))
         self.elements.append(HRFlowable(
-            width="100%", thickness=0.5, color=colors.lightgrey,
-            spaceBefore=0, spaceAfter=2*mm
+            width="100%", thickness=1, color=colors.black,
+            spaceBefore=0, spaceAfter=4*mm
         ))
 
-        # ── Client + Receipt Info (2 columns) ─────────────────────────
-        client_lines = []
-        if client.get('contact_name'):
-            client_lines.append(Paragraph(client['contact_name'], self.styles['ClientName']))
-        else:
-            client_lines.append(Paragraph("Valued Client", self.styles['ClientName']))
-        if client.get('contact_pos'):
-            client_lines.append(Paragraph(client['contact_pos'], self.styles['NormalText']))
-        if client.get('contact_ph'):
-            client_lines.append(Paragraph(f"Tel: {client['contact_ph']}", self.styles['NormalText']))
-        if client.get('company_name'):
-            client_lines.append(Paragraph(client['company_name'], self.styles['ClientName']))
-        if client.get('address'):
-            client_lines.append(Paragraph(client['address'], self.styles['NormalText']))
+        # ── SECTION 2: RECEIVED FROM (left) + Receipt Info (right) ───
+        # Left column styles
+        rcv_label_st = _s('RcvLbl', fontSize=7, fontName='Helvetica-Bold',
+                          textColor=colors.HexColor('#888888'), leading=10)
+        rcv_name_st  = _s('RcvName', fontSize=13, fontName='Helvetica-Bold',
+                          textColor=colors.black, leading=16, spaceBefore=1)
 
-        paid_date = inv.get('paid_date') or datetime.now().strftime('%Y-%m-%d')
-        receipt_lines = [
-            Paragraph("RECEIPT NO", self.styles['InvoiceLabel']),
-            Paragraph(f"REC-{inv.get('number','')}", self.styles['InvoiceValue']),
-            Paragraph("INVOICE REF", self.styles['InvoiceLabel']),
-            Paragraph(inv.get('number', ''), self.styles['InvoiceValue']),
-            Paragraph("INVOICE DATE", self.styles['InvoiceLabel']),
-            Paragraph(inv.get('date', ''), self.styles['InvoiceValue']),
-            Paragraph("PAID DATE", self.styles['InvoiceLabel']),
-            Paragraph(paid_date, self.styles['InvoiceValue']),
-            Paragraph("SERVICE", self.styles['InvoiceLabel']),
-            Paragraph(inv.get('service_type', ''), self.styles['InvoiceValue']),
+        # Right column styles  (label gray small / value bold black)
+        info_lbl_st  = _s('InfoLbl', fontSize=7, fontName='Helvetica',
+                          textColor=colors.HexColor('#888888'), alignment=TA_RIGHT, leading=9)
+        info_val_st  = _s('InfoVal', fontSize=9, fontName='Helvetica-Bold',
+                          textColor=colors.black, alignment=TA_RIGHT, leading=12)
+        info_val_hi  = _s('InfoValHi', fontSize=9, fontName='Helvetica-Bold',
+                          textColor=colors.black, alignment=TA_RIGHT, leading=12)
+
+        # Receipt number — styled prominent
+        # Receipt No — use stored receipt_no; fallback to RE-{invoice_no} for old records
+        rec_no = inv.get('receipt_no') or f"RE-{inv.get('number', '')}"
+
+        left_col = [
+            Paragraph("RECEIVED FROM:", rcv_label_st),
+            Paragraph(client.get('company_name') or "Valued Client", rcv_name_st),
         ]
 
-        col_half = page_width / 2
-        info_table = Table(
-            [[client_lines, receipt_lines]],
-            colWidths=[col_half, col_half]
+        right_col = [
+            Paragraph(
+                f'<font color="#888888">RECEIPT NO:</font>  '
+                f'<b><font color="black">{rec_no}</font></b>',
+                info_lbl_st
+            ),
+            Spacer(1, 1*mm),
+            Paragraph(
+                f'<font color="#888888">INVOICE REF:</font>  '
+                f'<b><font color="black">{inv.get("number","")}</font></b>',
+                info_lbl_st
+            ),
+            Spacer(1, 1*mm),
+            Paragraph(
+                f'<font color="#888888">RECEIVED DATE:</font>  '
+                f'<b><font color="black">{paid_date}</font></b>',
+                info_lbl_st
+            ),
+        ]
+
+        top_tbl = Table(
+            [[left_col, right_col]],
+            colWidths=[page_width * 0.55, page_width * 0.45]
         )
-        info_table.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        top_tbl.setStyle(TableStyle([
+            ('VALIGN',      (0, 0), (-1, -1), 'TOP'),
             ('LEFTPADDING', (0, 0), (-1, -1), 0),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING',(0, 0), (-1, -1), 0),
+            ('TOPPADDING',  (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING',(0,0), (-1, -1), 0),
         ]))
-        self.elements.append(info_table)
-        self.elements.append(Spacer(1, 5*mm))
-        self.elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.lightgrey,
-                                         spaceBefore=0, spaceAfter=3*mm))
+        self.elements.append(top_tbl)
+        self.elements.append(Spacer(1, 6*mm))
+        self.elements.append(HRFlowable(
+            width="100%", thickness=0.5, color=colors.HexColor('#DDDDDD'),
+            spaceBefore=0, spaceAfter=6*mm
+        ))
 
-        # ── PAID STAMP box ────────────────────────────────────────────
-        stamp_style = ParagraphStyle(
-            'PaidStamp', fontSize=28, fontName='Helvetica-Bold',
-            textColor=colors.white, alignment=TA_CENTER, leading=32
-        )
-        stamp_table = Table(
-            [[Paragraph("RECEIVED WITH THANKS", stamp_style)]],
-            colWidths=[page_width]
-        )
-        stamp_table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#16a34a')),
-            ('ROUNDEDCORNERS', [6]),
-            ('TOPPADDING', (0,0), (-1,-1), 10),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 10),
-        ]))
-        self.elements.append(stamp_table)
-        self.elements.append(Spacer(1, 5*mm))
+        # ── SECTION 3: Acknowledgement text ──────────────────────────
+        ack_subject = inv.get('inv_title') or inv.get('subject') or ''
+        ack_st = _s('Ack', fontSize=9, fontName='Helvetica',
+                    textColor=colors.HexColor('#444444'),
+                    alignment=TA_CENTER, leading=14)
+        ack_bold_st = _s('AckBold', fontSize=9, fontName='Helvetica-Bold',
+                         textColor=colors.black, alignment=TA_CENTER, leading=14)
 
-        # ── Amount Summary ────────────────────────────────────────────
-        grand_total = totals.get('grand_total', 0)
-        subtotal    = totals.get('subtotal', 0)
-        tax         = totals.get('tax', 0)
-        advance     = totals.get('advance', 0)
-        amount_words = totals.get('amount_in_words', '')
-
-        summary_data = [
-            ["Description", "Amount (MMK)"],
+        ack_box_data = [
+            [Paragraph("This is to acknowledge that we have received the payment for", ack_st)],
         ]
-        if subtotal:
-            summary_data.append(["Subtotal", f"{subtotal:,.0f}"])
-        if tax:
-            summary_data.append(["Commercial Tax (5%)", f"{tax:,.0f}"])
-        if advance:
-            summary_data.append([f"Deduction / Advance", f"- {advance:,.0f}"])
-        summary_data.append(["TOTAL RECEIVED", f"{grand_total:,.0f}"])
+        if ack_subject:
+            ack_box_data.append([Paragraph(f'"{ack_subject}"', ack_bold_st)])
 
-        col_desc  = page_width * 0.65
-        col_amt   = page_width * 0.35
-        sum_table = Table(summary_data, colWidths=[col_desc, col_amt])
-
-        n = len(summary_data)
-        sum_table.setStyle(TableStyle([
-            # Header row
-            ('BACKGROUND',    (0,0), (-1,0), colors.HexColor('#1e3a5f')),
-            ('TEXTCOLOR',     (0,0), (-1,0), colors.white),
-            ('FONTNAME',      (0,0), (-1,0), 'Helvetica-Bold'),
-            ('FONTSIZE',      (0,0), (-1,0), 10),
-            ('ALIGN',         (1,0), (1,0), 'RIGHT'),
-            # Body
-            ('FONTSIZE',      (0,1), (-1,-2), 10),
-            ('ALIGN',         (1,1), (1,-1), 'RIGHT'),
-            ('ROWBACKGROUNDS',(0,1), (-1,-2), [colors.white, colors.HexColor('#f8fafc')]),
-            # Total row
-            ('BACKGROUND',    (0,n-1), (-1,n-1), colors.HexColor('#16a34a')),
-            ('TEXTCOLOR',     (0,n-1), (-1,n-1), colors.white),
-            ('FONTNAME',      (0,n-1), (-1,n-1), 'Helvetica-Bold'),
-            ('FONTSIZE',      (0,n-1), (-1,n-1), 12),
-            # Grid
-            ('GRID',          (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
-            ('TOPPADDING',    (0,0), (-1,-1), 6),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        # ── Amount box inside acknowledgement ─────────────────────────
+        amt_box_st = _s('AmtBox', fontSize=20, fontName='Helvetica-Bold',
+                        textColor=colors.white, alignment=TA_CENTER, leading=26)
+        amt_box_tbl = Table(
+            [[Paragraph(f"AMOUNT RECEIVED: {grand_total:,.2f} MMK", amt_box_st)]],
+            colWidths=[page_width - 24*mm]
+        )
+        amt_box_tbl.setStyle(TableStyle([
+            ('BACKGROUND',    (0,0), (-1,-1), colors.black),
+            ('TOPPADDING',    (0,0), (-1,-1), 12),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 12),
             ('LEFTPADDING',   (0,0), (-1,-1), 8),
             ('RIGHTPADDING',  (0,0), (-1,-1), 8),
         ]))
-        self.elements.append(sum_table)
-        self.elements.append(Spacer(1, 4*mm))
 
-        # Amount in words
-        if amount_words:
-            words_style = ParagraphStyle(
-                'AmtWords', fontSize=9, fontName='Helvetica-Oblique',
-                textColor=colors.HexColor('#475569'), alignment=TA_LEFT
-            )
-            self.elements.append(
-                Paragraph(f"Amount in words: {amount_words}", words_style)
-            )
+        words_st = _s('Words', fontSize=9, fontName='Helvetica-BoldOblique',
+                      textColor=colors.HexColor('#333333'), alignment=TA_CENTER, leading=12)
+        words_lbl_st = _s('WordsLbl', fontSize=7, fontName='Helvetica-Bold',
+                          textColor=colors.HexColor('#888888'), alignment=TA_CENTER, leading=10)
 
+        # Outer box wrapping ack text + amount block
+        outer_data = [
+            [Paragraph("This is to acknowledge that we have received the payment for", ack_st)],
+        ]
+        if ack_subject:
+            outer_data.append([Paragraph(f'"{ack_subject}"', ack_bold_st)])
+        outer_data.append([Spacer(1, 4*mm)])
+        outer_data.append([amt_box_tbl])
+        outer_data.append([Spacer(1, 4*mm)])
+        outer_data.append([Paragraph("AMOUNT IN WORDS:", words_lbl_st)])
+        outer_data.append([Paragraph(amount_words, words_st)])
+        outer_data.append([Spacer(1, 2*mm)])
+
+        outer_tbl = Table(outer_data, colWidths=[page_width])
+        outer_tbl.setStyle(TableStyle([
+            ('BOX',           (0,0), (-1,-1), 0.5, colors.HexColor('#CCCCCC')),
+            ('LEFTPADDING',   (0,0), (-1,-1), 16),
+            ('RIGHTPADDING',  (0,0), (-1,-1), 16),
+            ('TOPPADDING',    (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ('TOPPADDING',    (0,0), (0,0),   10),
+        ]))
+        self.elements.append(outer_tbl)
         self.elements.append(Spacer(1, 8*mm))
-        self.elements.append(HRFlowable(width="100%", thickness=0.5,
-                                         color=colors.lightgrey,
-                                         spaceBefore=0, spaceAfter=2*mm))
 
-        # ── Signature line ────────────────────────────────────────────
-        sig_style = ParagraphStyle(
-            'Sig', fontSize=9, fontName='Helvetica',
-            textColor=colors.HexColor('#475569'), alignment=TA_CENTER
-        )
-        sig_table = Table(
-            [[Paragraph("_______________________", sig_style),
-              Paragraph("_______________________", sig_style)]],
-            colWidths=[page_width/2, page_width/2]
-        )
-        sig_table.setStyle(TableStyle([
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('TOPPADDING', (0,0), (-1,-1), 0),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 0),
-        ]))
-        self.elements.append(sig_table)
+        # ── SECTION 4: Payment Method (bottom left) ───────────────────
+        # Payment method — use exactly what was stored; smart fallback from payment details
+        payment_method = (inv.get('payment_method') or '').strip()
+        if not payment_method:
+            bank  = payment.get('bank_name', '').strip()
+            kpay  = payment.get('kpay_no', '').strip()
+            if bank and kpay:
+                payment_method = f"{bank} / KPay"
+            elif bank:
+                payment_method = f"Bank Transfer ({bank})"
+            elif kpay:
+                payment_method = "KPay"
+            else:
+                payment_method = ""
 
-        lbl_table = Table(
-            [[Paragraph("Authorized Signature", sig_style),
-              Paragraph("Received By", sig_style)]],
-            colWidths=[page_width/2, page_width/2]
+        pm_lbl_st = _s('PmLbl', fontSize=7, fontName='Helvetica-Bold',
+                       textColor=colors.HexColor('#888888'), leading=10)
+        pm_val_st = _s('PmVal', fontSize=11, fontName='Helvetica-Bold',
+                       textColor=colors.black, leading=14)
+
+        pm_col = []
+        if payment_method:
+            pm_col = [
+                Paragraph("PAYMENT METHOD:", pm_lbl_st),
+                Paragraph(payment_method, pm_val_st),
+            ]
+
+        # Right: empty (no signature per request)
+        empty_col = [Paragraph("", pm_lbl_st)]
+
+        bottom_tbl = Table(
+            [[pm_col, empty_col]],
+            colWidths=[page_width * 0.5, page_width * 0.5]
         )
-        lbl_table.setStyle(TableStyle([
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        bottom_tbl.setStyle(TableStyle([
+            ('VALIGN',      (0,0), (-1,-1), 'TOP'),
+            ('LEFTPADDING', (0,0), (-1,-1), 0),
+            ('RIGHTPADDING',(0,0), (-1,-1), 0),
+            ('TOPPADDING',  (0,0), (-1,-1), 0),
+            ('BOTTOMPADDING',(0,0),(-1,-1), 0),
         ]))
-        self.elements.append(lbl_table)
+        self.elements.append(bottom_tbl)
 
         # ── Build ─────────────────────────────────────────────────────
         return self.generate_invoice(invoice_data)

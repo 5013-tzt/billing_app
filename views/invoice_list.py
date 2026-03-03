@@ -3,10 +3,11 @@ from datetime import datetime
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QLabel, QHeaderView, QMessageBox, QAbstractItemView,
-    QLineEdit, QWidget, QFileDialog, QStyle, QInputDialog
+    QLineEdit, QWidget, QFileDialog, QStyle, QInputDialog,
+    QComboBox, QTextEdit, QDateEdit, QFrame, QSizePolicy
 )
 from PySide6.QtCore import Qt, QSize, QDate
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QFont
 from database import get_db
 
 
@@ -346,12 +347,16 @@ class InvoiceListDialog(QDialog):
     def mark_paid_at_row(self, row):
         id_i = self.table.item(row, 0)
         no_i = self.table.item(row, 1)
+        co_i = self.table.item(row, 3)
+        am_i = self.table.item(row, 6)
         st_i = self.table.item(row, 7)
         if not id_i:
             return
 
-        invoice_id = int(id_i.text())
-        invoice_no = no_i.text() if no_i else ""
+        invoice_id     = int(id_i.text())
+        invoice_no     = no_i.text() if no_i else ""
+        client_name    = co_i.text() if co_i else ""
+        amount_text    = am_i.text() if am_i else "0"
         current_status = st_i.text() if st_i else ""
 
         if current_status.lower() == "paid":
@@ -359,33 +364,42 @@ class InvoiceListDialog(QDialog):
                                     f"Invoice {invoice_no} is already Paid.")
             return
 
-        # ငွေပေးချေသည့်ရက်စွဲ ရိုက်ထည့်ခိုင်းမယ်
-        today = QDate.currentDate().toString("yyyy-MM-dd")
-        paid_date, ok = QInputDialog.getText(
-            self,
-            "Mark as Paid",
-            f"Invoice: {invoice_no}\n\nPayment received date (yyyy-MM-dd):",
-            text=today
-        )
-        if not ok or not paid_date.strip():
+        dlg = MarkAsPaidDialog(self, invoice_no, client_name, amount_text)
+        if dlg.exec() != QDialog.Accepted:
             return
 
-        paid_date = paid_date.strip()
+        paid_date      = dlg.get_paid_date()
+        payment_method = dlg.get_payment_method()
+        payment_note   = dlg.get_payment_note()
 
         try:
             conn = get_db()
+
+            # ── Receipt No auto-generate: RE-YY#### ──────────────────
+            year_suffix = datetime.now().strftime('%y')   # e.g. "26"
+            last = conn.execute(
+                "SELECT receipt_no FROM invoices WHERE receipt_no LIKE ? ORDER BY receipt_no DESC LIMIT 1",
+                (f"RE-{year_suffix}%",)
+            ).fetchone()
+            if last and last[0]:
+                try:
+                    seq = int(last[0][len(f"RE-{year_suffix}"):]) + 1
+                except ValueError:
+                    seq = 1
+            else:
+                seq = 1
+            receipt_no = f"RE-{year_suffix}{seq:04d}"
+
             conn.execute(
-                "UPDATE invoices SET status=?, paid_date=? WHERE id=?",
-                ("Paid", paid_date, invoice_id)
+                "UPDATE invoices SET status=?, paid_date=?, payment_method=?, payment_note=?, receipt_no=? WHERE id=?",
+                ("Paid", paid_date, payment_method, payment_note, receipt_no, invoice_id)
             )
             conn.commit()
             conn.close()
-
-            # Table ကို လက်ငင်း update
             self.load_invoices()
             QMessageBox.information(
-                self, "Success",
-                f"Invoice {invoice_no} marked as Paid!\nPayment date: {paid_date}"
+                self, "✅ Success",
+                f"Invoice {invoice_no} marked as Paid!\nReceipt No: {receipt_no}\nPayment date: {paid_date}"
             )
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to update status:\n{str(e)}")
@@ -503,6 +517,16 @@ class InvoiceListDialog(QDialog):
             except Exception:
                 paid_date = ""
 
+            try:
+                payment_method = inv['payment_method'] or ""
+            except Exception:
+                payment_method = ""
+
+            try:
+                receipt_no = inv['receipt_no'] or ""
+            except Exception:
+                receipt_no = ""
+
             return {
                 'mother_company': {
                     'name': inv['mother_name'] or '',
@@ -535,6 +559,8 @@ class InvoiceListDialog(QDialog):
                     'inv_title': inv['inv_title'] or '',
                     'status': inv['status'] or 'Pending',
                     'paid_date': paid_date,
+                    'payment_method': payment_method or 'Bank Transfer',
+                    'receipt_no': receipt_no,
                 },
                 'payment': {
                     'bank_name': inv['mother_bank_name'] or '',
@@ -620,3 +646,226 @@ class InvoiceListDialog(QDialog):
                 QMessageBox.information(self, "Success", f"Invoice {invoice_no} deleted!")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed:\n{str(e)}")
+
+# ══════════════════════════════════════════════════════════════════════
+# Mark as Paid — Professional Payment Dialog
+# ══════════════════════════════════════════════════════════════════════
+
+class MarkAsPaidDialog(QDialog):
+    """Invoice ငွေရရှိမှုမှတ်တမ်း dialog — ပုံပြထားတဲ့ design အတိုင်း"""
+
+    PAYMENT_METHODS = [
+        "Bank Transfer (KBZ/CB/AYA)",
+        "Bank Transfer (KBZ)",
+        "Bank Transfer (CB Bank)",
+        "Bank Transfer (AYA Bank)",
+        "Bank Transfer (MAB)",
+        "KPay",
+        "Wave Pay",
+        "Cash",
+        "Cheque",
+        "Other",
+    ]
+
+    def __init__(self, parent=None, invoice_no="", client_name="", amount_text="0"):
+        super().__init__(parent)
+        self.setWindowTitle("Mark as Paid")
+        self.setFixedWidth(520)
+        self.setModal(True)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.MinimumExpanding)
+
+        # ── Overall layout ────────────────────────────────────────────
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # ── Green header bar ──────────────────────────────────────────
+        header = QFrame()
+        header.setFixedHeight(56)
+        header.setStyleSheet("background-color: #16a34a; border-radius: 0px;")
+        h_lay = QHBoxLayout(header)
+        h_lay.setContentsMargins(20, 0, 20, 0)
+
+        emoji = QLabel("💰")
+        emoji.setStyleSheet("background: transparent; font-size: 20px;")
+        h_lay.addWidget(emoji)
+
+        title_lbl = QLabel(f"Payment for {invoice_no}")
+        title_font = QFont()
+        title_font.setPointSize(13)
+        title_font.setBold(True)
+        title_lbl.setFont(title_font)
+        title_lbl.setStyleSheet("color: white; background: transparent;")
+        h_lay.addWidget(title_lbl, 1)
+
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(30, 30)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                color: white; background: transparent;
+                border: none; font-size: 16px;
+            }
+            QPushButton:hover { background: rgba(255,255,255,0.2); border-radius: 4px; }
+        """)
+        close_btn.clicked.connect(self.reject)
+        h_lay.addWidget(close_btn)
+
+        root.addWidget(header)
+
+        # ── Body ──────────────────────────────────────────────────────
+        body = QWidget()
+        body.setStyleSheet("background: #ffffff;")
+        body_lay = QVBoxLayout(body)
+        body_lay.setContentsMargins(24, 20, 24, 8)
+        body_lay.setSpacing(14)
+
+        lbl_font = QFont()
+        lbl_font.setPointSize(10)
+        lbl_font.setBold(True)
+
+        field_font = QFont()
+        field_font.setPointSize(10)
+
+        field_style = """
+            QLineEdit, QDateEdit, QComboBox, QTextEdit {
+                border: 1.5px solid #d1d5db;
+                border-radius: 6px;
+                padding: 8px 10px;
+                font-size: 10pt;
+                background: #f9fafb;
+                color: #111827;
+            }
+            QLineEdit:focus, QDateEdit:focus, QComboBox:focus, QTextEdit:focus {
+                border: 1.5px solid #16a34a;
+                background: #ffffff;
+            }
+            QLineEdit[readOnly="true"] {
+                background: #f3f4f6;
+                color: #6b7280;
+            }
+        """
+
+        # Client Name (read-only)
+        body_lay.addWidget(self._label("Client Name", lbl_font))
+        self.client_field = QLineEdit(client_name)
+        self.client_field.setReadOnly(True)
+        self.client_field.setMinimumHeight(40)
+        self.client_field.setFont(field_font)
+        self.client_field.setStyleSheet(field_style)
+        body_lay.addWidget(self.client_field)
+
+        # Received Date + Amount row
+        row1 = QHBoxLayout()
+        row1.setSpacing(14)
+
+        date_col = QVBoxLayout()
+        date_col.setSpacing(6)
+        date_col.addWidget(self._label("Received Date", lbl_font))
+        self.date_edit = QDateEdit()
+        self.date_edit.setCalendarPopup(True)
+        self.date_edit.setDate(QDate.currentDate())
+        self.date_edit.setDisplayFormat("dd-MM-yyyy")
+        self.date_edit.setMinimumHeight(40)
+        self.date_edit.setFont(field_font)
+        self.date_edit.setStyleSheet(field_style)
+        date_col.addWidget(self.date_edit)
+        row1.addLayout(date_col, 1)
+
+        amt_col = QVBoxLayout()
+        amt_col.setSpacing(6)
+        amt_col.addWidget(self._label("Amount (MMK)", lbl_font))
+        self.amount_field = QLineEdit(amount_text)
+        self.amount_field.setReadOnly(True)
+        self.amount_field.setMinimumHeight(40)
+        self.amount_field.setFont(field_font)
+        self.amount_field.setStyleSheet(field_style)
+        amt_col.addWidget(self.amount_field)
+        row1.addLayout(amt_col, 1)
+
+        body_lay.addLayout(row1)
+
+        # Payment Method
+        body_lay.addWidget(self._label("Payment Method", lbl_font))
+        self.method_cb = QComboBox()
+        self.method_cb.addItems(self.PAYMENT_METHODS)
+        self.method_cb.setMinimumHeight(40)
+        self.method_cb.setFont(field_font)
+        self.method_cb.setStyleSheet(field_style + """
+            QComboBox::drop-down { border: none; width: 24px; }
+            QComboBox::down-arrow { width: 12px; height: 12px; }
+        """)
+        body_lay.addWidget(self.method_cb)
+
+        # Note / Remarks
+        body_lay.addWidget(self._label("Note / Remarks", lbl_font))
+        self.note_edit = QTextEdit()
+        self.note_edit.setPlaceholderText("Enter reference (e.g. Transaction ID)")
+        self.note_edit.setFixedHeight(80)
+        self.note_edit.setFont(field_font)
+        self.note_edit.setStyleSheet(field_style)
+        body_lay.addWidget(self.note_edit)
+
+        root.addWidget(body)
+
+        # ── Divider ───────────────────────────────────────────────────
+        div = QFrame()
+        div.setFrameShape(QFrame.HLine)
+        div.setStyleSheet("color: #e5e7eb;")
+        root.addWidget(div)
+
+        # ── Footer buttons ────────────────────────────────────────────
+        footer = QWidget()
+        footer.setStyleSheet("background: #ffffff;")
+        f_lay = QHBoxLayout(footer)
+        f_lay.setContentsMargins(24, 12, 24, 16)
+        f_lay.setSpacing(12)
+        f_lay.addStretch()
+
+        btn_font = QFont()
+        btn_font.setPointSize(10)
+        btn_font.setBold(True)
+
+        close_action = QPushButton("Close")
+        close_action.setFixedHeight(42)
+        close_action.setMinimumWidth(100)
+        close_action.setFont(btn_font)
+        close_action.setStyleSheet("""
+            QPushButton {
+                background: #4b5563; color: white;
+                border: none; border-radius: 6px;
+            }
+            QPushButton:hover { background: #374151; }
+        """)
+        close_action.clicked.connect(self.reject)
+        f_lay.addWidget(close_action)
+
+        confirm_btn = QPushButton("Confirm Payment")
+        confirm_btn.setFixedHeight(42)
+        confirm_btn.setMinimumWidth(150)
+        confirm_btn.setFont(btn_font)
+        confirm_btn.setStyleSheet("""
+            QPushButton {
+                background: #16a34a; color: white;
+                border: none; border-radius: 6px;
+            }
+            QPushButton:hover { background: #15803d; }
+        """)
+        confirm_btn.clicked.connect(self.accept)
+        f_lay.addWidget(confirm_btn)
+
+        root.addWidget(footer)
+
+    def _label(self, text, font):
+        lbl = QLabel(text)
+        lbl.setFont(font)
+        lbl.setStyleSheet("color: #111827;")
+        return lbl
+
+    def get_paid_date(self):
+        return self.date_edit.date().toString("yyyy-MM-dd")
+
+    def get_payment_method(self):
+        return self.method_cb.currentText()
+
+    def get_payment_note(self):
+        return self.note_edit.toPlainText().strip()

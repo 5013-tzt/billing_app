@@ -122,6 +122,27 @@ def init_db():
             cursor.execute("ALTER TABLE invoices ADD COLUMN paid_date TEXT DEFAULT NULL")
         except:
             print("paid_date column may already exist")
+
+    if 'payment_method' not in column_names:
+        print("Adding payment_method column...")
+        try:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN payment_method TEXT DEFAULT ''")
+        except:
+            print("payment_method may already exist")
+
+    if 'payment_note' not in column_names:
+        print("Adding payment_note column...")
+        try:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN payment_note TEXT DEFAULT ''")
+        except:
+            print("payment_note may already exist")
+
+    if 'receipt_no' not in column_names:
+        print("Adding receipt_no column...")
+        try:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN receipt_no TEXT DEFAULT ''")
+        except:
+            print("receipt_no may already exist")
     
     # Invoice items table
     conn.execute('''
