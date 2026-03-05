@@ -909,10 +909,12 @@ class InvoiceDialog(QDialog):
         if is_daily:
             start_idx = self.get_col_index("Start Date")
             if start_idx != -1:
+                # Default date = invoice date
+                inv_date = self.invoice_date.date()
                 for offset in range(2):  # 0: Start, 1: End
                     de = QDateEdit()
                     de.setCalendarPopup(True)
-                    de.setDate(QDate.currentDate())
+                    de.setDate(inv_date)   # ← invoice date အတိုင်း default
                     de.setStyleSheet(
                         "QDateEdit {"
                         "  background-color: #FFFFFF;"
@@ -928,8 +930,15 @@ class InvoiceDialog(QDialog):
                         "  color: #1A1A1A;"
                         "}"
                     )
-                    de.dateChanged.connect(lambda checked, r=row: self.calculate_daily_days(r))  # ဒီ လိုင်း ကို ရှိနေတဲ့ အတိုင်း ချိန်ညှိပါ
+                    de.dateChanged.connect(lambda checked, r=row: self.calculate_daily_days(r))
                     self.table.setCellWidget(row, start_idx + offset, de)
+
+                # Days default = 1
+                d_idx = self.get_col_index("Days")
+                if d_idx != -1:
+                    days_item = QTableWidgetItem("1")
+                    days_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    self.table.setItem(row, d_idx, days_item)
 
     def calculate_totals(self):
         """Total တွေကိုတွက်မယ်"""
@@ -1235,6 +1244,10 @@ class InvoiceDialog(QDialog):
             # Financial info
             self.tax_check.setChecked(invoice['tax'] > 0)
             self.advance_amt.setText(str(invoice['advance'] or 0))
+            try:
+                self.advance_text.setText(invoice['advance_text'] or '')
+            except Exception:
+                pass
             
             # Items တွေ load မယ်
             items = conn.execute('''
@@ -1413,25 +1426,25 @@ class InvoiceDialog(QDialog):
                         grand_total = ?,
                         status = ?,
                         inv_title = ?,
-                        service_type = ?
+                        service_type = ?,
+                        inv_type = ?,
+                        use_work_days = ?,
+                        advance_text = ?
                     WHERE id = ?
                 ''', (
                     self.invoice_date.date().toString("yyyy-MM-dd"),
-                    client_id,
-                    mother_company_id,
-                    company_name,
+                    client_id, mother_company_id, company_name,
                     self.addr_cb.currentText() if self.addr_cb.currentText() else None,
                     self.contact_name.text() if self.show_name.isChecked() else None,
                     self.contact_pos.text() if self.show_pos.isChecked() else None,
                     self.contact_ph.text() if self.show_ph.isChecked() else None,
                     self.contact_em.text() if self.show_em.isChecked() else None,
-                    subtotal,
-                    tax,
-                    advance,
-                    grand_total,
-                    'Pending',
+                    subtotal, tax, advance, grand_total, 'Pending',
                     self.inv_title.text(),
                     self.service_cat_cb.currentText(),
+                    self.inv_type_cb.currentText(),
+                    1 if self.work_day_check.isChecked() else 0,
+                    self.advance_text.text().strip(),
                     self.current_invoice_id
                 ))
                 
@@ -1448,73 +1461,82 @@ class InvoiceDialog(QDialog):
                     INSERT INTO invoices (
                         invoice_no, invoice_date, client_id, mother_company_id, company_name, address,
                         contact_name, contact_pos, contact_ph, contact_email,
-                        subtotal, tax, advance, grand_total, status, inv_title, service_type
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        subtotal, tax, advance, grand_total, status, inv_title, service_type,
+                        inv_type, use_work_days, advance_text
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     invoice_no,
                     self.invoice_date.date().toString("yyyy-MM-dd"),
-                    client_id,
-                    mother_company_id,
-                    company_name,
+                    client_id, mother_company_id, company_name,
                     self.addr_cb.currentText() if self.addr_cb.currentText() else None,
                     self.contact_name.text() if self.show_name.isChecked() else None,
                     self.contact_pos.text() if self.show_pos.isChecked() else None,
                     self.contact_ph.text() if self.show_ph.isChecked() else None,
                     self.contact_em.text() if self.show_em.isChecked() else None,
-                    subtotal,
-                    tax,
-                    advance,
-                    grand_total,
-                    'Pending',
+                    subtotal, tax, advance, grand_total, 'Pending',
                     self.inv_title.text(),
-                    self.service_cat_cb.currentText()
+                    self.service_cat_cb.currentText(),
+                    self.inv_type_cb.currentText(),
+                    1 if self.work_day_check.isChecked() else 0,
+                    self.advance_text.text().strip(),
                 ))
                 
                 invoice_id = cursor.lastrowid
                 message = f"Invoice {invoice_no} Saved Successfully!"
             
-            # Insert new items (ဒီအတိုင်းထား)
-            qty_idx = self.get_col_index("Qty")
+            # Insert new items
+            qty_idx   = self.get_col_index("Qty")
             price_idx = self.get_col_index("Unit Price")
-            amt_idx = self.get_col_index("Amount")
-            
+            amt_idx   = self.get_col_index("Amount")
+            days_idx  = self.get_col_index("Days")
+            start_idx = self.get_col_index("Start Date")
+
+            is_daily_save     = self.inv_type_cb.currentText() == "📊 Daily"
+            use_work_days_save = self.work_day_check.isChecked()
+
             for row in range(self.table.rowCount()):
-                desc_item = self.table.item(row, 0)
-                qty_item = self.table.item(row, qty_idx) if qty_idx != -1 else None
+                desc_item  = self.table.item(row, 0)
+                qty_item   = self.table.item(row, qty_idx)   if qty_idx   != -1 else None
                 price_item = self.table.item(row, price_idx) if price_idx != -1 else None
-                amt_item = self.table.item(row, amt_idx) if amt_idx != -1 else None
-                
+                amt_item   = self.table.item(row, amt_idx)   if amt_idx   != -1 else None
+                days_item  = self.table.item(row, days_idx)  if days_idx  != -1 else None
+
                 if desc_item and desc_item.text().strip():
-                    qty_val = 0
-                    if qty_item and qty_item.text():
-                        try:
-                            qty_val = float(qty_item.text())
-                        except:
-                            qty_val = 0
-                    
-                    price_val = 0
-                    if price_item and price_item.text():
-                        try:
-                            price_val = float(price_item.text().replace(',', ''))
-                        except:
-                            price_val = 0
-                    
-                    amt_val = 0
-                    if amt_item and amt_item.text():
-                        try:
-                            amt_val = float(amt_item.text().replace(',', ''))
-                        except:
-                            amt_val = 0
-                    
+                    def _sf(o):
+                        if not o: return 0.0
+                        try: return float(o.text().replace(',', ''))
+                        except: return 0.0
+
+                    # days / start / end
+                    days_val   = 0.0
+                    start_val  = ""
+                    end_val    = ""
+
+                    if is_daily_save and start_idx != -1:
+                        sw = self.table.cellWidget(row, start_idx)
+                        ew = self.table.cellWidget(row, start_idx + 1)
+                        if sw: start_val = sw.date().toString("yyyy-MM-dd")
+                        if ew: end_val   = ew.date().toString("yyyy-MM-dd")
+                        di = self.table.item(row, days_idx) if days_idx != -1 else None
+                        try: days_val = float(di.text()) if di and di.text() else 1.0
+                        except: days_val = 1.0
+                    elif use_work_days_save and days_item and days_item.text():
+                        try: days_val = float(days_item.text())
+                        except: days_val = 0.0
+
                     cursor.execute('''
-                        INSERT INTO invoice_items (invoice_id, description, qty, unit_price, amount)
-                        VALUES (?, ?, ?, ?, ?)
+                        INSERT INTO invoice_items
+                            (invoice_id, description, qty, unit_price, amount, days, start_date, end_date)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         invoice_id,
-                        desc_item.text(),
-                        qty_val,
-                        price_val,
-                        amt_val
+                        desc_item.text().strip(),
+                        _sf(qty_item),
+                        _sf(price_item),
+                        _sf(amt_item),
+                        days_val,
+                        start_val,
+                        end_val,
                     ))
             
             conn.commit()
@@ -1581,9 +1603,10 @@ class InvoiceDialog(QDialog):
             if current_index > 0:
                 client = self.client_cb.itemData(current_index)
                 if client and isinstance(client, dict):
-                    client_abbr = client.get('abbr', 'INV')
+                    abbr = (client.get('abbr') or '').strip()
+                    client_abbr = abbr if abbr else 'INV'
             else:
-                # Client အသစ်ဆိုရင် INV နဲ့ထုတ်
+                # Client အသစ် သို့မဟုတ် abbr မထည့်ထားရင် INV
                 client_abbr = 'INV'
             
             date_str = self.invoice_date.date().toString("ddMMyyyy")
@@ -1700,12 +1723,22 @@ class InvoiceDialog(QDialog):
             qty_idx   = self.get_col_index("Qty")
             price_idx = self.get_col_index("Unit Price")
             amt_idx   = self.get_col_index("Amount")
+            days_idx  = self.get_col_index("Days")
+            start_idx = self.get_col_index("Start Date")
+
+            is_daily     = self.inv_type_cb.currentText() == "📊 Daily"
+            use_work_days = self.work_day_check.isChecked()
+
+            # days in month for working days label
+            target_date   = self.invoice_date.date()
+            days_in_month = calendar.monthrange(target_date.year(), target_date.month())[1]
 
             for row in range(self.table.rowCount()):
                 desc_item  = self.table.item(row, 0)
                 qty_item   = self.table.item(row, qty_idx)   if qty_idx   != -1 else None
                 price_item = self.table.item(row, price_idx) if price_idx != -1 else None
                 amt_item   = self.table.item(row, amt_idx)   if amt_idx   != -1 else None
+                days_item  = self.table.item(row, days_idx)  if days_idx  != -1 else None
 
                 if desc_item and desc_item.text().strip():
                     def safe_float(item_obj):
@@ -1716,11 +1749,43 @@ class InvoiceDialog(QDialog):
                         except:
                             return 0.0
 
+                    # days info
+                    days_val = None
+                    start_str = ""
+                    end_str   = ""
+
+                    if is_daily and start_idx != -1:
+                        sw = self.table.cellWidget(row, start_idx)
+                        ew = self.table.cellWidget(row, start_idx + 1)
+                        if sw and ew:
+                            start_str = sw.date().toString("dd MMM yyyy")
+                            end_str   = ew.date().toString("dd MMM yyyy")
+                        # Days value — from Days column (user edited or auto-calculated)
+                        if days_idx != -1:
+                            di = self.table.item(row, days_idx)
+                            try:
+                                days_val = float(di.text()) if di and di.text() else 1
+                            except:
+                                days_val = 1
+                        else:
+                            days_val = 1
+                    elif use_work_days and days_item and days_item.text():
+                        try:
+                            days_val = float(days_item.text())
+                        except:
+                            days_val = None
+
                     invoice_data['items'].append({
                         'description': desc_item.text().strip(),
-                        'qty': safe_float(qty_item),
-                        'unit_price': safe_float(price_item),
-                        'amount': safe_float(amt_item),
+                        'qty':         safe_float(qty_item),
+                        'unit_price':  safe_float(price_item),
+                        'amount':      safe_float(amt_item),
+                        'days':        days_val,
+                        'start_date':  start_str,
+                        'end_date':    end_str,
+                        'days_in_month': days_in_month if use_work_days else None,
+                        'is_daily':    is_daily,
+                        'use_work_days': use_work_days,
                     })
 
             # Totals တွက်ခြင်း
@@ -1733,6 +1798,7 @@ class InvoiceDialog(QDialog):
                 'subtotal': subtotal,
                 'tax': tax,
                 'advance': advance,
+                'advance_text': self.advance_text.text().strip() or 'ADVANCE',
                 'grand_total': grand_total,
                 'amount_in_words': number_to_words_mm(int(round(grand_total))),
             }

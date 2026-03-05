@@ -143,6 +143,27 @@ def init_db():
             cursor.execute("ALTER TABLE invoices ADD COLUMN receipt_no TEXT DEFAULT ''")
         except:
             print("receipt_no may already exist")
+
+    if 'inv_type' not in column_names:
+        print("Adding inv_type column...")
+        try:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN inv_type TEXT DEFAULT 'Monthly'")
+        except:
+            print("inv_type may already exist")
+
+    if 'use_work_days' not in column_names:
+        print("Adding use_work_days column...")
+        try:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN use_work_days INTEGER DEFAULT 0")
+        except:
+            print("use_work_days may already exist")
+
+    if 'advance_text' not in column_names:
+        print("Adding advance_text column...")
+        try:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN advance_text TEXT DEFAULT ''")
+        except:
+            print("advance_text may already exist")
     
     # Invoice items table
     conn.execute('''
@@ -153,9 +174,24 @@ def init_db():
             qty INTEGER DEFAULT 0,
             unit_price REAL DEFAULT 0,
             amount REAL DEFAULT 0,
+            days REAL DEFAULT 0,
+            start_date TEXT DEFAULT '',
+            end_date TEXT DEFAULT '',
             FOREIGN KEY (invoice_id) REFERENCES invoices (id)
         )
     ''')
+
+    # Migration: invoice_items မှာ days/start_date/end_date မရှိရင် ထည့်
+    cursor.execute("PRAGMA table_info(invoice_items)")
+    item_cols = [col[1] for col in cursor.fetchall()]
+    for col, sql in [
+        ('days',       "ALTER TABLE invoice_items ADD COLUMN days REAL DEFAULT 0"),
+        ('start_date', "ALTER TABLE invoice_items ADD COLUMN start_date TEXT DEFAULT ''"),
+        ('end_date',   "ALTER TABLE invoice_items ADD COLUMN end_date TEXT DEFAULT ''"),
+    ]:
+        if col not in item_cols:
+            try: cursor.execute(sql)
+            except: pass
     
     # Settings table
     conn.execute('''

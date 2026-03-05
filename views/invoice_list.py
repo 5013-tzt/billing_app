@@ -570,10 +570,16 @@ class InvoiceListDialog(QDialog):
                 },
                 'items': [
                     {
-                        'description': it['description'] or '',
-                        'qty': it['qty'] or 0,
-                        'unit_price': it['unit_price'] or 0,
-                        'amount': it['amount'] or 0,
+                        'description':   it['description'] or '',
+                        'qty':           it['qty'] or 0,
+                        'unit_price':    it['unit_price'] or 0,
+                        'amount':        it['amount'] or 0,
+                        'days':          it['days'] if it['days'] else None,
+                        'start_date':    it['start_date'] or '',
+                        'end_date':      it['end_date'] or '',
+                        'is_daily':      (inv['inv_type'] or '') == '📊 Daily',
+                        'use_work_days': bool(inv['use_work_days']) and (inv['inv_type'] or '') != '📊 Daily',
+                        'days_in_month': None,
                     }
                     for it in items
                 ],
@@ -581,6 +587,7 @@ class InvoiceListDialog(QDialog):
                     'subtotal': inv['subtotal'] or 0,
                     'tax': inv['tax'] or 0,
                     'advance': inv['advance'] or 0,
+                    'advance_text': inv['advance_text'] or 'ADVANCE',
                     'grand_total': grand_total,
                     'amount_in_words': number_to_words_mm(int(grand_total)),
                 },

@@ -541,42 +541,69 @@ class ClientDialog(QDialog):
             QMessageBox.warning(self, "Error", "Company Name လိုအပ်ပါတယ်!")
             return
 
-        vals = [self.name_in.text(), self.abbr_in.text()]
-        for addr in self.addrs:
-            vals.append(addr.toPlainText())
-        for contact in self.contacts:
-            vals.append(contact["n"].text())
-            vals.append(contact["p"].text())
-            vals.append(contact["ph"].text())
-            vals.append(contact["em"].text())
+        try:
+            vals = [self.name_in.text(), self.abbr_in.text()]
+            for addr in self.addrs:
+                vals.append(addr.toPlainText())
+            for contact in self.contacts:
+                vals.append(contact["n"].text())
+                vals.append(contact["p"].text())
+                vals.append(contact["ph"].text())
+                vals.append(contact["em"].text())
 
-        conn = get_db()
-        if self.current_id:
-            q = """
-                UPDATE clients SET
-                    name=?, abbr=?,
-                    addr1=?, addr2=?, addr3=?,
-                    c1_name=?, c1_pos=?, c1_ph=?, c1_em=?,
-                    c2_name=?, c2_pos=?, c2_ph=?, c2_em=?,
-                    c3_name=?, c3_pos=?, c3_ph=?, c3_em=?
-                WHERE id=?
-            """
-            vals.append(self.current_id)
-        else:
-            q = """
-                INSERT INTO clients (
-                    name, abbr,
-                    addr1, addr2, addr3,
-                    c1_name, c1_pos, c1_ph, c1_em,
-                    c2_name, c2_pos, c2_ph, c2_em,
-                    c3_name, c3_pos, c3_ph, c3_em
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
+            conn = get_db()
 
-        conn.execute(q, tuple(vals))
-        conn.commit()
-        conn.close()
+            # Migration — c2/c3 columns မရှိရင် ထည့်ပေး
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(clients)")
+            existing_cols = [col[1] for col in cursor.fetchall()]
+            extra_cols = {
+                'c2_name': "ALTER TABLE clients ADD COLUMN c2_name TEXT DEFAULT ''",
+                'c2_pos':  "ALTER TABLE clients ADD COLUMN c2_pos  TEXT DEFAULT ''",
+                'c2_ph':   "ALTER TABLE clients ADD COLUMN c2_ph   TEXT DEFAULT ''",
+                'c2_em':   "ALTER TABLE clients ADD COLUMN c2_em   TEXT DEFAULT ''",
+                'c3_name': "ALTER TABLE clients ADD COLUMN c3_name TEXT DEFAULT ''",
+                'c3_pos':  "ALTER TABLE clients ADD COLUMN c3_pos  TEXT DEFAULT ''",
+                'c3_ph':   "ALTER TABLE clients ADD COLUMN c3_ph   TEXT DEFAULT ''",
+                'c3_em':   "ALTER TABLE clients ADD COLUMN c3_em   TEXT DEFAULT ''",
+            }
+            for col, sql in extra_cols.items():
+                if col not in existing_cols:
+                    try:
+                        cursor.execute(sql)
+                    except Exception:
+                        pass
+            conn.commit()
 
-        QMessageBox.information(self, "✅ Success", "အောင်မြင်စွာ သိမ်းဆည်းပြီး!")
-        self.refresh_table()
-        self.clear_fields()
+            if self.current_id:
+                q = """
+                    UPDATE clients SET
+                        name=?, abbr=?,
+                        addr1=?, addr2=?, addr3=?,
+                        c1_name=?, c1_pos=?, c1_ph=?, c1_em=?,
+                        c2_name=?, c2_pos=?, c2_ph=?, c2_em=?,
+                        c3_name=?, c3_pos=?, c3_ph=?, c3_em=?
+                    WHERE id=?
+                """
+                vals.append(self.current_id)
+            else:
+                q = """
+                    INSERT INTO clients (
+                        name, abbr,
+                        addr1, addr2, addr3,
+                        c1_name, c1_pos, c1_ph, c1_em,
+                        c2_name, c2_pos, c2_ph, c2_em,
+                        c3_name, c3_pos, c3_ph, c3_em
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+
+            conn.execute(q, tuple(vals))
+            conn.commit()
+            conn.close()
+
+            QMessageBox.information(self, "✅ Success", "အောင်မြင်စွာ သိမ်းဆည်းပြီး!")
+            self.refresh_table()
+            self.clear_fields()
+
+        except Exception as e:
+            QMessageBox.critical(self, "❌ Error", f"သိမ်းမရပါ!\n\n{str(e)}")

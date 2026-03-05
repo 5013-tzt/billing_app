@@ -545,25 +545,83 @@ class InvoicePDFGenerator:
         # === SECTION 4: Items Table ===
         # ============================================================
         if items:
-            table_data = [[
-                Paragraph("DESCRIPTION", self.styles['TableHeader']),
-                Paragraph("QTY",         self.styles['TableHeader']),
-                Paragraph("UNIT PRICE",  self.styles['TableHeader']),
-                Paragraph("AMOUNT",      self.styles['TableHeader'])
-            ]]
+            # ── Detect mode from first item ───────────────────────────
+            is_daily      = items[0].get('is_daily', False)
+            use_work_days = items[0].get('use_work_days', False)
+            days_in_month = items[0].get('days_in_month') or 30
 
-            for item in items:
-                table_data.append([
-                    Paragraph(item.get('description', ''),         self.styles['TableCell']),
-                    Paragraph(str(int(item.get('qty', 0))),        self.styles['TableCellRight']),
-                    Paragraph(f"{item.get('unit_price', 0):,.0f}", self.styles['TableCellRight']),
-                    Paragraph(f"{item.get('amount', 0):,.2f}",     self.styles['TableCellRight'])
-                ])
+            if is_daily:
+                # Daily: DESCRIPTION | START DATE | END DATE | DAYS | QTY | UNIT PRICE | AMOUNT
+                table_data = [[
+                    Paragraph("DESCRIPTION", self.styles['TableHeader']),
+                    Paragraph("START DATE",  self.styles['TableHeader']),
+                    Paragraph("END DATE",    self.styles['TableHeader']),
+                    Paragraph("DAYS",        self.styles['TableHeader']),
+                    Paragraph("QTY",         self.styles['TableHeader']),
+                    Paragraph("UNIT PRICE",  self.styles['TableHeader']),
+                    Paragraph("AMOUNT",      self.styles['TableHeader']),
+                ]]
+                col_widths = [
+                    page_width*0.26, page_width*0.13, page_width*0.13,
+                    page_width*0.07, page_width*0.07,
+                    page_width*0.17, page_width*0.17
+                ]
+                for item in items:
+                    dv = item.get('days', '')
+                    table_data.append([
+                        Paragraph(item.get('description', ''),                           self.styles['TableCell']),
+                        Paragraph(item.get('start_date', ''),                            self.styles['TableCellRight']),
+                        Paragraph(item.get('end_date', ''),                              self.styles['TableCellRight']),
+                        Paragraph(str(int(float(dv))) if dv not in (None, '') else '1',  self.styles['TableCellRight']),
+                        Paragraph(str(int(item.get('qty', 0))),                          self.styles['TableCellRight']),
+                        Paragraph(f"{item.get('unit_price', 0):,.0f}",                  self.styles['TableCellRight']),
+                        Paragraph(f"{item.get('amount', 0):,.2f}",                      self.styles['TableCellRight']),
+                    ])
 
-            tbl = Table(
-                table_data,
-                colWidths=[page_width*0.45, page_width*0.15, page_width*0.2, page_width*0.2]
-            )
+            elif use_work_days:
+                # Monthly working days: DESCRIPTION | DAYS | QTY | UNIT PRICE | AMOUNT
+                table_data = [[
+                    Paragraph("DESCRIPTION", self.styles['TableHeader']),
+                    Paragraph("DAYS",        self.styles['TableHeader']),
+                    Paragraph("QTY",         self.styles['TableHeader']),
+                    Paragraph("UNIT PRICE",  self.styles['TableHeader']),
+                    Paragraph("AMOUNT",      self.styles['TableHeader']),
+                ]]
+                col_widths = [
+                    page_width*0.38, page_width*0.10,
+                    page_width*0.10, page_width*0.22, page_width*0.20
+                ]
+                for item in items:
+                    dv = item.get('days', '')
+                    table_data.append([
+                        Paragraph(item.get('description', ''),                                    self.styles['TableCell']),
+                        Paragraph(str(int(float(dv))) if dv not in (None, '') else '',            self.styles['TableCellRight']),
+                        Paragraph(str(int(item.get('qty', 0))),                                   self.styles['TableCellRight']),
+                        Paragraph(f"{item.get('unit_price', 0):,.0f}",                           self.styles['TableCellRight']),
+                        Paragraph(f"{item.get('amount', 0):,.2f}",                               self.styles['TableCellRight']),
+                    ])
+
+            else:
+                # Normal: DESCRIPTION | QTY | UNIT PRICE | AMOUNT
+                table_data = [[
+                    Paragraph("DESCRIPTION", self.styles['TableHeader']),
+                    Paragraph("QTY",         self.styles['TableHeader']),
+                    Paragraph("UNIT PRICE",  self.styles['TableHeader']),
+                    Paragraph("AMOUNT",      self.styles['TableHeader']),
+                ]]
+                col_widths = [
+                    page_width*0.45, page_width*0.15,
+                    page_width*0.20, page_width*0.20
+                ]
+                for item in items:
+                    table_data.append([
+                        Paragraph(item.get('description', ''),          self.styles['TableCell']),
+                        Paragraph(str(int(item.get('qty', 0))),         self.styles['TableCellRight']),
+                        Paragraph(f"{item.get('unit_price', 0):,.0f}",  self.styles['TableCellRight']),
+                        Paragraph(f"{item.get('amount', 0):,.2f}",      self.styles['TableCellRight']),
+                    ])
+
+            tbl = Table(table_data, colWidths=col_widths)
             tbl.setStyle(TableStyle([
                 # Header row
                 ('BACKGROUND',    (0, 0), (-1, 0),  colors.black),
@@ -604,8 +662,9 @@ class InvoicePDFGenerator:
             ])
 
         if totals.get('advance', 0) > 0:
+            adv_label = totals.get('advance_text') or 'ADVANCE'
             totals_data.append([
-                Paragraph("ADVANCE", self.styles['TotalLabelLight']),
+                Paragraph(adv_label, self.styles['TotalLabelLight']),
                 Paragraph(f"-{totals.get('advance', 0):,.2f} MMK", self.styles['TotalValueLight'])
             ])
 
